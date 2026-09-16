@@ -13,6 +13,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import EmailHtmlFrame from '../components/EmailHtmlFrame';
 import SnoozeMenu from '../components/SnoozeMenu';
 import EmailTagInput from '../components/EmailTagInput';
+import InvitationCard from '../components/InvitationCard';
 import { usePanelMode, PANEL_TRANSITION } from '../utils/usePanelMode';
 
 // v6.6.2: Kollabierte Spaltenbreiten — schmal genug damit Icons noch klickbar sind
@@ -2471,6 +2472,25 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
 
   const account = getActiveAccount();
 
+  // v7.2.0: Der Kalenderteil einer Einladung gehört in die Einladungskarte,
+  // nicht ins Anhang-Banner — sonst steht er doppelt da. `index` wird
+  // mitgeführt, damit der bestehende Speicher-Fortschritt weiter passt.
+  const attachmentsWithIndex = useMemo(
+    () => (selectedEmail?.attachments || []).map((att, index) => ({ ...att, index })),
+    [selectedEmail]
+  );
+  const calendarAttachment = useMemo(
+    () => attachmentsWithIndex.find(a => a.isCalendar && a.content) || null,
+    [attachmentsWithIndex]
+  );
+  const visibleAttachments = useMemo(
+    () => (selectedEmail?.invitation ? attachmentsWithIndex.filter(a => !a.isCalendar) : attachmentsWithIndex),
+    [attachmentsWithIndex, selectedEmail]
+  );
+  // Im vereinheitlichten Posteingang kann die Mail zu einem anderen Konto
+  // gehören als dem aktiven — die Zu-/Absage muss über dessen Konto laufen.
+  const invitationAccount = useMemo(() => accountFor(selectedEmail), [accountFor, selectedEmail]);
+
   // v1.11.1: Sort folders with INBOX first, then standard folders, then alphabetically
   const sortedFolders = useMemo(() => {
     // Priority order for standard folders
@@ -3742,16 +3762,29 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
                 {/* v6.14.0: Anhänge ÜBER dem Mailtext in einem markanten Banner —
                     vorher standen sie unter der Mail und waren ohne Scrollen
                     unsichtbar (wurden dadurch leicht übersehen). */}
-                {selectedEmail.attachments?.length > 0 && (
+                {/* v7.2.0: Einladung zuoberst — vorher steckten die Termindaten
+                    unlesbar im namenlosen .ics-Anhang. */}
+                {selectedEmail.invitation && (
+                  <InvitationCard
+                    invitation={selectedEmail.invitation}
+                    account={invitationAccount}
+                    icsAttachment={calendarAttachment}
+                    icsState={calendarAttachment ? attachProgress[calendarAttachment.index] : null}
+                    onSaveIcs={() => calendarAttachment && saveAttachment(calendarAttachment, calendarAttachment.index, false)}
+                    onOpenIcs={() => calendarAttachment && saveAttachment(calendarAttachment, calendarAttachment.index, true)}
+                  />
+                )}
+                {visibleAttachments.length > 0 && (
                   <div className="mb-4 p-3 rounded-xl border border-amber-500/50 bg-amber-500/10">
                     <h4 className="font-semibold text-amber-400 mb-2 flex items-center gap-2 text-sm">
                       <Attachment size={18} />
-                      {selectedEmail.attachments.length === 1
+                      {visibleAttachments.length === 1
                         ? '1 Anhang'
-                        : `${selectedEmail.attachments.length} Anhänge`}
+                        : `${visibleAttachments.length} Anhänge`}
                     </h4>
                     <div className="flex flex-wrap gap-2">
-                      {selectedEmail.attachments.map((att, i) => {
+                      {visibleAttachments.map((att) => {
+                        const i = att.index;
                         const prog = attachProgress[i];
                         const hasContent = !!att.content;
                         return (

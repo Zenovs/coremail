@@ -10,6 +10,7 @@ import MailApi from '../services/MailApi';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmailHtmlFrame from '../components/EmailHtmlFrame';
 import EscapeCloser from '../components/EscapeCloser';
+import InvitationCard from '../components/InvitationCard';
 
 const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolder = 'INBOX' }) => {
   const { currentTheme } = useTheme();
@@ -275,6 +276,22 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
     });
   };
 
+  // v7.2.0: Der Kalenderteil einer Einladung wird in der Einladungskarte
+  // angeboten und darum aus dem Anhang-Banner ausgeblendet. Der ursprüngliche
+  // Index bleibt am Objekt, damit die Fortschrittsanzeige weiter stimmt.
+  const attachmentsWithIndex = React.useMemo(
+    () => (fullEmail?.attachments || []).map((att, index) => ({ ...att, index })),
+    [fullEmail]
+  );
+  const calendarAttachment = React.useMemo(
+    () => attachmentsWithIndex.find(a => a.isCalendar && a.content) || null,
+    [attachmentsWithIndex]
+  );
+  const visibleAttachments = React.useMemo(
+    () => (fullEmail?.invitation ? attachmentsWithIndex.filter(a => !a.isCalendar) : attachmentsWithIndex),
+    [attachmentsWithIndex, fullEmail]
+  );
+
   const downloadAttachment = async (attachment, index, andOpen = false) => {
     setDownloadProgress(prev => ({ ...prev, [index]: 'downloading' }));
     try {
@@ -295,22 +312,25 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
   };
 
   const downloadAllAttachments = async () => {
-    if (!fullEmail?.attachments?.length) return;
-    
+    // v7.2.0: nur die sichtbaren Anhänge — der Kalenderteil einer Einladung
+    // hat seinen eigenen Knopf in der Einladungskarte und wäre sonst ein
+    // ungefragter Extra-Download hinter der Anzahl im Banner.
+    if (!visibleAttachments.length) return;
+
     setDownloadingAll(true);
-    
+
     try {
       if (window.electronAPI?.saveAllAttachments) {
-        const result = await window.electronAPI.saveAllAttachments(fullEmail.attachments);
+        const result = await window.electronAPI.saveAllAttachments(visibleAttachments);
         if (result.success) {
-          fullEmail.attachments.forEach((_, i) => {
-            setDownloadProgress(prev => ({ ...prev, [i]: 'done' }));
+          visibleAttachments.forEach((att) => {
+            setDownloadProgress(prev => ({ ...prev, [att.index]: 'done' }));
           });
           setTimeout(() => setDownloadProgress({}), 2000);
         }
       } else {
-        for (let i = 0; i < fullEmail.attachments.length; i++) {
-          await downloadAttachment(fullEmail.attachments[i], i);
+        for (const att of visibleAttachments) {
+          await downloadAttachment(att, att.index);
           await new Promise(r => setTimeout(r, 500));
         }
       }
@@ -327,7 +347,10 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
-  const getFileIcon = (contentType, filename) => {
+  // Anhänge ohne Content-Type kommen vor (z.B. eingebettete Kalenderteile) —
+  // ohne den String-Fallback riss die ganze Mailansicht mit einem TypeError ab.
+  const getFileIcon = (rawType, filename) => {
+    const contentType = String(rawType || '');
     if (contentType.startsWith('image/')) return Image;
     if (contentType === 'application/pdf') return DocumentPdf;
     if (contentType.includes('zip') || contentType.includes('archive')) return Box;
@@ -336,7 +359,8 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
     return DocumentBlank;
   };
 
-  const isPreviewable = (contentType) => {
+  const isPreviewable = (rawType) => {
+    const contentType = String(rawType || '');
     return contentType.startsWith('image/') || contentType === 'application/pdf';
   };
 
@@ -668,12 +692,25 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
         <div className="max-w-4xl mx-auto">
           {/* v6.14.0: Anhänge ÜBER dem Mailtext in einem markanten Banner —
               vorher unter der Mail und darum leicht zu übersehen */}
-          {fullEmail.attachments && fullEmail.attachments.length > 0 && (
+          {/* v7.2.0: Einladung zuoberst — die Termindaten steckten vorher
+              unlesbar im namenlosen .ics-Anhang. */}
+          {fullEmail.invitation && (
+            <InvitationCard
+              invitation={fullEmail.invitation}
+              account={getActiveAccount?.()}
+              icsAttachment={calendarAttachment}
+              icsState={calendarAttachment ? (downloadProgress[calendarAttachment.index] === 'downloading' ? 'saving' : downloadProgress[calendarAttachment.index]) : null}
+              onSaveIcs={() => calendarAttachment && downloadAttachment(calendarAttachment, calendarAttachment.index, false)}
+              onOpenIcs={() => calendarAttachment && downloadAttachment(calendarAttachment, calendarAttachment.index, true)}
+            />
+          )}
+
+          {visibleAttachments.length > 0 && (
             <div className="mb-5 p-4 rounded-xl border border-amber-500/50 bg-amber-500/10">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-amber-400 flex items-center gap-2">
                   <Attachment size={18} />
-                  {fullEmail.attachments.length === 1 ? '1 Anhang' : `${fullEmail.attachments.length} Anhänge`}
+                  {visibleAttachments.length === 1 ? '1 Anhang' : `${visibleAttachments.length} Anhänge`}
                 </h3>
                 <button
                   onClick={downloadAllAttachments}
@@ -687,12 +724,14 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
               </div>
               
               <div className="grid gap-3">
-                {fullEmail.attachments.map((att, index) => (
+                {visibleAttachments.map((att) => {
+                  const index = att.index;
+                  return (
                   <div
                     key={`${fullEmail.uid}-${att.filename}-${index}`}
                     className={`${c.bgSecondary} rounded-lg ${c.border} border overflow-hidden`}
                   >
-                    {att.contentType.startsWith('image/') && (
+                    {att.contentType?.startsWith('image/') && (
                       <div 
                         className="w-full h-32 bg-gray-900 flex items-center justify-center cursor-pointer"
                         onClick={() => setPreviewAttachment(att)}
@@ -723,7 +762,7 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
                         <div className="min-w-0">
                           <p className={`text-sm ${c.text} truncate`}>{att.filename}</p>
                           <p className={`text-xs ${c.textSecondary}`}>
-                            {formatFileSize(att.size)} • {att.contentType.split('/')[1]?.toUpperCase() || 'Datei'}
+                            {formatFileSize(att.size)} • {att.contentType?.split('/')[1]?.toUpperCase() || 'Datei'}
                           </p>
                         </div>
                       </div>
@@ -761,7 +800,8 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -843,7 +883,7 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
               </div>
             </div>
             <div className="p-4 max-h-[70vh] overflow-auto bg-gray-900">
-              {previewAttachment.contentType.startsWith('image/') ? (
+              {previewAttachment.contentType?.startsWith('image/') ? (
                 <img 
                   src={`data:${previewAttachment.contentType};base64,${previewAttachment.content}`}
                   alt={previewAttachment.filename}

@@ -90,7 +90,8 @@ const APP_VERSION = require('./package.json').version;
 const GITHUB_REPO = 'Zenovs/coremail';
 
 // v7.0: sicherheitskritische pure Functions — extrahiert und getestet (tests/pure.test.js)
-const { compareVersions, isTrustedUpdateUrl, isSafePublicHttpsUrl, matchCondition, matchRule } = require('./lib/pure');
+const { compareVersions, isTrustedUpdateUrl, isSafePublicHttpsUrl, matchCondition, matchRule,
+        parseICalendar, isCalendarPart, normalizeAttachments, extractInvitation } = require('./lib/pure');
 
 // Verschlüsselte Speicherung
 // v4.5.6: Benutzerspezifischer Key statt hardcodiertem String.
@@ -924,6 +925,7 @@ function extractListUnsubscribe(parsedMail) {
 
   return { mailto, http, oneClick };
 }
+
 
 // v2.0.0: IMAP-Konfiguration für ein Konto erstellen
 function getImapConfigForAccount(account) {
@@ -2389,6 +2391,15 @@ ipcMain.handle('imap:fetchEmailForAccount', async (event, accountId, uid, folder
     const all = messages[0].parts.find(p => p.which === '');
     const parsed = await simpleParser(all.body);
 
+    // v7.2.0: Kalenderteile haben oft keinen Dateinamen — normalizeAttachments
+    // vergibt einen und markiert sie, damit der Renderer sie als Einladung zeigt.
+    const attachments = normalizeAttachments(parsed.attachments.map(att => ({
+      filename: att.filename,
+      contentType: att.contentType,
+      size: att.size,
+      content: att.content.toString('base64')
+    })));
+
     return {
       success: true,
       email: {
@@ -2403,12 +2414,9 @@ ipcMain.handle('imap:fetchEmailForAccount', async (event, accountId, uid, folder
         html: parsed.html || null,
         text: parsed.text || '',
         listUnsubscribe: extractListUnsubscribe(parsed),
-        attachments: parsed.attachments.map(att => ({
-          filename: att.filename,
-          contentType: att.contentType,
-          size: att.size,
-          content: att.content.toString('base64')
-        }))
+        attachments,
+        // v7.2.0: Meeting-Einladung (text/calendar) ausgewertet mitliefern
+        invitation: extractInvitation(attachments, parsed)
       }
     };
   } catch (error) {
@@ -2521,6 +2529,15 @@ ipcMain.handle('imap:fetchEmail', async (event, uid) => {
     const all = messages[0].parts.find(p => p.which === '');
     const parsed = await simpleParser(all.body);
 
+    // v7.2.0: Kalenderteile haben oft keinen Dateinamen — normalizeAttachments
+    // vergibt einen und markiert sie, damit der Renderer sie als Einladung zeigt.
+    const attachments = normalizeAttachments(parsed.attachments.map(att => ({
+      filename: att.filename,
+      contentType: att.contentType,
+      size: att.size,
+      content: att.content.toString('base64')
+    })));
+
     return {
       success: true,
       email: {
@@ -2535,12 +2552,9 @@ ipcMain.handle('imap:fetchEmail', async (event, uid) => {
         html: parsed.html || null,
         text: parsed.text || '',
         listUnsubscribe: extractListUnsubscribe(parsed),
-        attachments: parsed.attachments.map(att => ({
-          filename: att.filename,
-          contentType: att.contentType,
-          size: att.size,
-          content: att.content.toString('base64')
-        }))
+        attachments,
+        // v7.2.0: Meeting-Einladung (text/calendar) ausgewertet mitliefern
+        invitation: extractInvitation(attachments, parsed)
       }
     };
   } catch (error) {
@@ -3753,6 +3767,130 @@ ipcMain.handle('graph:fetchEmails', async (event, accountId, { folder = 'INBOX',
   }
 });
 
+// ─── Graph: Meeting-Einladungen (v7.2.0) ────────────────────────────────────
+// Exchange wandelt Einladungen in "eventMessage"-Objekte um und entfernt den
+// text/calendar-Teil. Die Termindaten stehen am verknüpften Kalendereintrag,
+// den Graph per $expand=event mitliefert.
+
+const GRAPH_PARTSTAT = {
+  accepted: 'ACCEPTED',
+  declined: 'DECLINED',
+  tentativelyAccepted: 'TENTATIVE',
+  notResponded: 'NEEDS-ACTION',
+  none: 'NEEDS-ACTION',
+  organizer: 'ACCEPTED'
+};
+
+const GRAPH_MESSAGE_METHOD = {
+  meetingRequest: 'REQUEST',
+  meetingCancelled: 'CANCEL',
+  meetingAccepted: 'REPLY',
+  meetingTentativelyAccepted: 'REPLY',
+  meetingDeclined: 'REPLY'
+};
+
+const GRAPH_WEEKDAYS = {
+  monday: 'Montag', tuesday: 'Dienstag', wednesday: 'Mittwoch', thursday: 'Donnerstag',
+  friday: 'Freitag', saturday: 'Samstag', sunday: 'Sonntag'
+};
+
+function describeGraphRecurrence(recurrence) {
+  const pattern = recurrence?.pattern;
+  if (!pattern) return null;
+  const interval = pattern.interval || 1;
+  const type = String(pattern.type || '').toLowerCase();
+  let text;
+  if (type === 'daily')                             text = interval === 1 ? 'Täglich' : `Alle ${interval} Tage`;
+  else if (type === 'weekly')                       text = interval === 1 ? 'Wöchentlich' : `Alle ${interval} Wochen`;
+  else if (type.includes('monthly'))                text = interval === 1 ? 'Monatlich' : `Alle ${interval} Monate`;
+  else if (type.includes('yearly'))                 text = interval === 1 ? 'Jährlich' : `Alle ${interval} Jahre`;
+  else return null;
+
+  const days = (pattern.daysOfWeek || []).map(d => GRAPH_WEEKDAYS[String(d).toLowerCase()]).filter(Boolean);
+  if (days.length) text += ` am ${days.join(', ')}`;
+
+  const range = recurrence.range || {};
+  if (range.type === 'numbered' && range.numberOfOccurrences) text += `, ${range.numberOfOccurrences}×`;
+  else if (range.type === 'endDate' && range.endDate) text += `, bis ${String(range.endDate).slice(0, 10).split('-').reverse().join('.')}`;
+  return text;
+}
+
+// Graph liefert dateTime ohne Zeitzonen-Suffix; mit Prefer-UTC ist es UTC.
+function graphDateToIso(slot, isAllDay) {
+  const dt = slot?.dateTime || slot?.date;
+  if (!dt) return null;
+  if (isAllDay) return String(dt).slice(0, 10);
+  if (/Z$|[+-]\d{2}:\d{2}$/.test(dt)) return new Date(dt).toISOString();
+  return new Date(dt + 'Z').toISOString();
+}
+
+// Erkennt eine Einladung, ohne für jede geöffnete Mail eine Zusatzabfrage zu
+// riskieren: Graph annotiert abgeleitete Typen mit @odata.type, und Exchange
+// setzt zusätzlich den Header `Content-Class: urn:content-classes:calendarmessage`.
+// Zwei unabhängige Signale — fehlt eines, greift das andere.
+function isGraphMeetingMessage(message) {
+  const odataType = String(message?.['@odata.type'] || '').toLowerCase();
+  if (odataType.includes('eventmessage')) return true;
+  if (message?.meetingMessageType) return true;
+  const headers = message?.internetMessageHeaders || [];
+  return headers.some(h => /^content-class$/i.test(h?.name || '') && /calendarmessage/i.test(h?.value || ''));
+}
+
+async function fetchGraphInvitation(accountId, messageId, message) {
+  if (!isGraphMeetingMessage(message)) return null;
+
+  try {
+    const detail = await graphRequest(
+      accountId, 'GET',
+      `/me/messages/${messageId}?$select=id,meetingMessageType,isOutOfDate&$expand=event`,
+      undefined,
+      { 'Prefer': 'outlook.timezone="UTC"' }
+    );
+    const ev = detail?.event;
+    if (!ev) return null;
+
+    const method = GRAPH_MESSAGE_METHOD[detail.meetingMessageType] || 'REQUEST';
+    const organizer = ev.organizer?.emailAddress || {};
+
+    return {
+      source: 'graph',
+      method,
+      eventId: ev.id || null,
+      uid: ev.iCalUId || null,
+      sequence: 0,
+      status: ev.isCancelled ? 'CANCELLED' : 'CONFIRMED',
+      summary: ev.subject || '(Kein Titel)',
+      description: ev.bodyPreview || '',
+      location: ev.location?.displayName || '',
+      url: ev.webLink || null,
+      start: graphDateToIso(ev.start, ev.isAllDay),
+      end: graphDateToIso(ev.end, ev.isAllDay),
+      allDay: ev.isAllDay === true,
+      timeZone: ev.start?.timeZone || null,
+      organizer: (organizer.address || organizer.name)
+        ? { name: organizer.name || organizer.address, email: organizer.address || '', partstat: 'ACCEPTED' }
+        : null,
+      attendees: (ev.attendees || []).map(a => ({
+        name: a.emailAddress?.name || a.emailAddress?.address || '',
+        email: a.emailAddress?.address || '',
+        partstat: GRAPH_PARTSTAT[a.status?.response] || 'NEEDS-ACTION',
+        optional: String(a.type || '').toLowerCase() === 'optional',
+        rsvp: true
+      })),
+      rrule: null,
+      recurrence: describeGraphRecurrence(ev.recurrence),
+      meetingUrl: ev.onlineMeeting?.joinUrl || (ev.isOnlineMeeting ? ev.onlineMeetingUrl : null) || null,
+      isCancelled: method === 'CANCEL' || ev.isCancelled === true,
+      isOutOfDate: detail.isOutOfDate === true,
+      myResponse: GRAPH_PARTSTAT[ev.responseStatus?.response] || 'NEEDS-ACTION',
+      filename: 'einladung.ics'
+    };
+  } catch (err) {
+    console.error('[Einladung] Graph-Termin nicht ladbar:', err.message);
+    return null;
+  }
+}
+
 // --- IPC: Graph – Fetch single email with body ---
 ipcMain.handle('graph:fetchEmail', async (event, accountId, messageId) => {
   try {
@@ -3782,6 +3920,14 @@ ipcMain.handle('graph:fetchEmail', async (event, accountId, messageId) => {
       }
     } catch (_) {}
 
+    const attachments = normalizeAttachments((data.attachments || []).map(att => ({
+      filename: att.name,
+      size: att.size,
+      contentType: att.contentType,
+      content: att.contentBytes || null,
+      id: att.id
+    })));
+
     const email = {
       ...normalizeGraphEmail(data),
       html: data.body?.contentType?.toLowerCase() === 'html' ? data.body.content : null,
@@ -3789,14 +3935,15 @@ ipcMain.handle('graph:fetchEmail', async (event, accountId, messageId) => {
       cc: (data.ccRecipients || []).map(r => r.emailAddress?.address).filter(Boolean).join(', '),
       bcc: (data.bccRecipients || []).map(r => r.emailAddress?.address).filter(Boolean).join(', '),
       listUnsubscribe,
-      attachments: (data.attachments || []).map(att => ({
-        filename: att.name,
-        size: att.size,
-        contentType: att.contentType,
-        content: att.contentBytes || null,
-        id: att.id
-      }))
+      attachments
     };
+
+    // v7.2.0: Meeting-Einladung. Exchange reicht bei M365-Konten keinen
+    // text/calendar-Anhang durch — die Termindaten hängen stattdessen am
+    // zugehörigen Kalendereintrag (eventMessage). Darum zuerst der Anhang-Weg
+    // (z.B. weitergeleitete .ics), danach der Graph-Weg.
+    email.invitation = extractInvitation(attachments, null) || await fetchGraphInvitation(accountId, messageId, data);
+
     return { success: true, email };
   } catch (error) {
     console.error('[Graph] fetchEmail:', error.message);
@@ -4763,6 +4910,78 @@ ipcMain.handle('calendar:deleteEvent', async (event, accountId, eventId) => {
     await graphRequest(accountId, 'DELETE', `/me/events/${eventId}`);
     return { success: true };
   } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// ─── Einladungen beantworten / übernehmen (v7.2.0) ──────────────────────────
+
+// Zu-/Absage für eine M365-Einladung. Graph verlangt die Aktion auf dem
+// Kalendereintrag (nicht auf der Mail) — die eventId liefert fetchGraphInvitation.
+const GRAPH_RESPONSE_ACTIONS = {
+  accept: 'accept',
+  decline: 'decline',
+  tentative: 'tentativelyAccept'
+};
+
+ipcMain.handle('calendar:respondToEvent', async (event, accountId, eventId, response, options = {}) => {
+  const action = GRAPH_RESPONSE_ACTIONS[response];
+  if (!action) return { success: false, error: `Unbekannte Antwort: ${response}` };
+  if (!eventId)  return { success: false, error: 'Kein Termin zur Einladung gefunden' };
+  try {
+    await graphRequest(accountId, 'POST', `/me/events/${eventId}/${action}`, {
+      comment: options.comment || '',
+      sendResponse: options.sendResponse !== false
+    });
+    return { success: true, response };
+  } catch (err) {
+    console.error('[Einladung] Antwort fehlgeschlagen:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+// Einladung aus einer .ics-Datei in den M365-Kalender übernehmen.
+// Für reine IMAP-Konten gibt es kein Kalender-Backend — dort bleibt der Weg
+// über "ICS speichern/öffnen" (der Anhang trägt jetzt einen echten Dateinamen).
+ipcMain.handle('calendar:importInvitation', async (event, accountId, invitation) => {
+  try {
+    if (!invitation?.start) return { success: false, error: 'Einladung ohne Startzeitpunkt' };
+    const account = getAccountById(accountId);
+    if (account?.type !== 'microsoft') {
+      return { success: false, error: 'Kalender-Übernahme ist nur für Microsoft-365-Konten verfügbar' };
+    }
+
+    // Graph erwartet dateTime OHNE Zeitzonen-Suffix plus separates timeZone-Feld
+    const toGraph = (iso) => {
+      if (!iso) return null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return `${iso}T00:00:00`;
+      return new Date(iso).toISOString().replace(/\.\d+Z$/, '').replace(/Z$/, '');
+    };
+    const nextDay = (dateOnly) => new Date(new Date(`${dateOnly}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10);
+
+    const startDt = toGraph(invitation.start);
+    let endIso = invitation.end;
+    // Ohne DTEND: Ganztagestermine enden am Folgetag (Graph verlangt das),
+    // Terminen mit Uhrzeit wird eine Stunde gegeben.
+    if (!endIso || (invitation.allDay && endIso === invitation.start)) {
+      endIso = invitation.allDay
+        ? nextDay(String(invitation.start).slice(0, 10))
+        : new Date(new Date(invitation.start).getTime() + 3600000).toISOString();
+    }
+    const endDt = toGraph(endIso);
+
+    const body = {
+      subject: invitation.summary || '(Kein Titel)',
+      start: { dateTime: startDt, timeZone: 'UTC' },
+      end: { dateTime: endDt, timeZone: 'UTC' },
+      isAllDay: invitation.allDay === true,
+      location: invitation.location ? { displayName: invitation.location } : undefined,
+      body: invitation.description ? { contentType: 'text', content: invitation.description } : undefined
+    };
+    const result = await graphRequest(accountId, 'POST', '/me/events', body);
+    return { success: true, eventId: result?.id };
+  } catch (err) {
+    console.error('[Einladung] Import fehlgeschlagen:', err.message);
     return { success: false, error: err.message };
   }
 });

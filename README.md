@@ -186,9 +186,15 @@ echo "CoreMail wurde komplett entfernt!"
 - **Entwurf-Autosave** — Entwürfe werden alle 10 Sekunden gespeichert
 - **Undo Send** — kurze Verzögerung nach dem Senden mit Abbruch-Möglichkeit
 
-### 📅 Kalender
+### 📅 Kalender &amp; Einladungen
 - **Microsoft 365 Kalender** — Termine ansehen, erstellen und bearbeiten
 - Direkte Integration mit Microsoft Graph
+- **Meeting-Einladungen lesbar** — Titel, Zeitraum, Ort, Organisator und Teilnehmerliste stehen direkt über der Mail, statt als namenloser Anhang
+- **Zusagen, Vorbehalt, Absagen** — mit einem Klick aus der Mail heraus (Microsoft 365)
+- **In den Kalender übernehmen** — Einladungen aus `.ics`-Dateien landen im M365-Kalender
+- **Kalenderdatei öffnen** — `.ics` speichern oder direkt ans Kalender-Programm übergeben (auch bei IMAP-Konten)
+- **Online-Meetings** — Teams-, Zoom-, Meet- und Webex-Links werden erkannt und direkt angeboten
+- **Serientermine und Absagen** werden als solche gekennzeichnet
 
 ### 🎨 Design &amp; Darstellung
 - **Carbon Design System Icons** — einheitliches, professionelles Erscheinungsbild

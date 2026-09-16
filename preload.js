@@ -177,4 +177,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   calendarCreateEvent: (accountId, eventData) => ipcRenderer.invoke('calendar:createEvent', accountId, eventData),
   calendarUpdateEvent: (accountId, eventId, eventData) => ipcRenderer.invoke('calendar:updateEvent', accountId, eventId, eventData),
   calendarDeleteEvent: (accountId, eventId) => ipcRenderer.invoke('calendar:deleteEvent', accountId, eventId),
+  // v7.2.0: Meeting-Einladungen beantworten / in den Kalender übernehmen
+  calendarRespondToEvent: (accountId, eventId, response, options) => ipcRenderer.invoke('calendar:respondToEvent', accountId, eventId, response, options),
+  calendarImportInvitation: (accountId, invitation) => ipcRenderer.invoke('calendar:importInvitation', accountId, invitation),
 });
