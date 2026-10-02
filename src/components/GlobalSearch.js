@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useCallback } from 'react';
-import { Search, Close, Filter, Calendar, Email, Attachment, Flag, ChevronDown, ChevronUp, InProgress, WarningAlt } from '@carbon/icons-react';
+import { Search, Close, Filter, Calendar, Email, Flag, ChevronDown, ChevronUp, InProgress, WarningAlt } from '@carbon/icons-react';
+import Attachment from './PaperclipIcon';
 import { useTheme } from '../context/ThemeContext';
 import { useSearch } from '../context/SearchContext';
 import { useAccounts } from '../context/AccountContext';

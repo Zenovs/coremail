@@ -47,6 +47,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Accounts & Categories (v1.1)
   saveAccounts: (data) => ipcRenderer.invoke('accounts:save', data),
   loadAccounts: () => ipcRenderer.invoke('accounts:load'),
+
+  // Profil-Export/-Import (v7.3.0)
+  exportProfile: () => ipcRenderer.invoke('profile:export'),
+  selectProfileImportFile: () => ipcRenderer.invoke('profile:selectImportFile'),
+  importProfile: (opts) => ipcRenderer.invoke('profile:import', opts),
+  cancelProfileImport: () => ipcRenderer.invoke('profile:cancelImport'),
   
   // Legacy Settings (v1.0 compatibility)
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),

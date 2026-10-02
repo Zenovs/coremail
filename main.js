@@ -92,6 +92,8 @@ const GITHUB_REPO = 'Zenovs/coremail';
 // v7.0: sicherheitskritische pure Functions — extrahiert und getestet (tests/pure.test.js)
 const { compareVersions, isTrustedUpdateUrl, isSafePublicHttpsUrl, matchCondition, matchRule,
         parseICalendar, isCalendarPart, normalizeAttachments, extractInvitation } = require('./lib/pure');
+// v7.3.0: Profil-Export/-Import (tests/profileTransfer.test.js)
+const profileTransfer = require('./lib/profileTransfer');
 
 // Verschlüsselte Speicherung
 // v4.5.6: Benutzerspezifischer Key statt hardcodiertem String.
@@ -2165,6 +2167,152 @@ ipcMain.handle('accounts:load', async () => {
   } catch (error) {
     return { success: false, error: error.message };
   }
+});
+
+// === PROFIL EXPORT/IMPORT (v7.3.0) ===
+// Konten + Kategorien + Signaturen + Microsoft-Token in eine mit Einmal-
+// Passwort verschlüsselte Datei, die nur 5 Minuten gültig ist. Krypto und
+// Zusammenführen in lib/profileTransfer.js (getestet). Die Datei und das
+// Passwort laufen nie durch den Renderer — nur Anzeige-Infos.
+const PROFILE_EXT = 'coremail-profile';
+const PROFILE_MAX_BYTES = 20 * 1024 * 1024;
+const PROFILE_USED_KEY = 'profileImportsUsed';
+let pendingProfileImport = null; // { path, file }
+
+function getUsedProfileIds() {
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  // Ältere Einträge braucht es nicht mehr: solche Dateien sind längst abgelaufen
+  const used = store.get(PROFILE_USED_KEY, []).filter(e => e && e.at > weekAgo);
+  return used;
+}
+
+// Best effort: Inhalt überschreiben, dann löschen (auf SSDs nicht garantiert,
+// die Datei ist aber ohnehin verschlüsselt und abgelaufen bzw. verbraucht)
+function destroyProfileFile(filePath) {
+  try {
+    const size = fs.statSync(filePath).size;
+    fs.writeFileSync(filePath, crypto.randomBytes(size));
+    fs.unlinkSync(filePath);
+    return true;
+  } catch (e) {
+    console.warn('[Profil] Datei konnte nicht gelöscht werden:', e.message);
+    return false;
+  }
+}
+
+ipcMain.handle('profile:export', async () => {
+  try {
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '');
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Profil exportieren',
+      defaultPath: path.join(app.getPath('documents'), `coremail-profil-${stamp}.${PROFILE_EXT}`),
+      filters: [{ name: 'CoreMail-Profil', extensions: [PROFILE_EXT] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, canceled: true };
+
+    const accounts = store.get('accounts', []);
+    const allSignatures = store.get('signatures', {});
+    const signatures = {};
+    const msalCaches = {};
+    for (const acc of accounts) {
+      if (allSignatures[acc.id]) signatures[acc.id] = allSignatures[acc.id];
+      if (acc.type === 'microsoft') {
+        const blob = store.get(`msalCache_${acc.id}`, '');
+        if (blob) msalCaches[acc.id] = blob;
+      }
+    }
+    const payload = {
+      appVersion: app.getVersion(),
+      accounts,
+      categories: store.get('categories', []),
+      signatures,
+      msalCaches,
+    };
+
+    const password = profileTransfer.generateOneTimePassword();
+    const file = await profileTransfer.encryptProfile(payload, password);
+    fs.writeFileSync(result.filePath, JSON.stringify(file), { mode: 0o600 });
+    return {
+      success: true,
+      password,
+      expiresAt: file.expiresAt,
+      filePath: result.filePath,
+      accountCount: accounts.length,
+      categoryCount: payload.categories.length,
+    };
+  } catch (error) {
+    console.error('[Profil] Export fehlgeschlagen:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('profile:selectImportFile', async () => {
+  pendingProfileImport = null;
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Profil importieren',
+      properties: ['openFile'],
+      filters: [{ name: 'CoreMail-Profil', extensions: [PROFILE_EXT] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return { success: false, canceled: true };
+    const filePath = result.filePaths[0];
+    if (fs.statSync(filePath).size > PROFILE_MAX_BYTES) {
+      return { success: false, error: 'Datei ist zu gross für eine CoreMail-Profildatei' };
+    }
+    const file = profileTransfer.parseProfileFile(fs.readFileSync(filePath, 'utf8'));
+    profileTransfer.checkProfileUsable(file, { usedIds: getUsedProfileIds().map(e => e.id) });
+    pendingProfileImport = { path: filePath, file };
+    return { success: true, fileName: path.basename(filePath), createdAt: file.createdAt, expiresAt: file.expiresAt };
+  } catch (error) {
+    return { success: false, error: error.message, code: error.code };
+  }
+});
+
+ipcMain.handle('profile:import', async (event, { password, deleteFile = true } = {}) => {
+  if (!pendingProfileImport) return { success: false, error: 'Keine Profildatei ausgewählt' };
+  const { path: filePath, file } = pendingProfileImport;
+  try {
+    const used = getUsedProfileIds();
+    const data = await profileTransfer.decryptProfile(file, password, { usedIds: used.map(e => e.id) });
+
+    const merged = profileTransfer.mergeProfile({
+      accounts: store.get('accounts', []),
+      categories: store.get('categories', []),
+      signatures: store.get('signatures', {}),
+    }, data);
+
+    // Datei sofort als verbraucht markieren — vor dem Schreiben der Konten,
+    // damit ein Absturz mittendrin keinen zweiten Import erlaubt
+    store.set(PROFILE_USED_KEY, [...used, { id: file.exportId, at: Date.now() }]);
+    pendingProfileImport = null;
+
+    for (const id of merged.importedAccountIds) {
+      if (imapPool.has(id)) releaseImapConnection(id, true);
+      invalidateGraphTokenCache(id);
+    }
+    for (const [id, blob] of Object.entries(merged.msalCaches)) {
+      store.set(`msalCache_${id}`, blob);
+    }
+    store.set('accounts', merged.accounts);
+    store.set('categories', merged.categories);
+    store.set('signatures', merged.signatures);
+    invalidateAccountsCache();
+
+    const fileDeleted = deleteFile ? destroyProfileFile(filePath) : false;
+    return { success: true, ...merged.stats, fileDeleted };
+  } catch (error) {
+    // Abgelaufen/verbraucht: Auswahl verwerfen, ein neuer Versuch bringt nichts
+    if (error.code === 'EXPIRED' || error.code === 'ALREADY_USED' || error.code === 'INVALID_TIME') {
+      pendingProfileImport = null;
+    }
+    if (!error.code) console.error('[Profil] Import fehlgeschlagen:', error);
+    return { success: false, error: error.message, code: error.code };
+  }
+});
+
+ipcMain.handle('profile:cancelImport', async () => {
+  pendingProfileImport = null;
+  return { success: true };
 });
 
 // === LEGACY SETTINGS (for backward compatibility) ===

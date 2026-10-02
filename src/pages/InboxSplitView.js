@@ -4,8 +4,9 @@ import {
   WarningAlt, Archive, Folder, DragVertical, Security,
   CheckboxChecked, Checkbox, CloseFilled, ChevronDown, ChevronRight,
   Bullhorn, Misuse, Debug, Tag, Close, Checkmark, CheckmarkFilled, Reply, ReplyAll, SendAlt,
-  Download, FolderOpen, Earth, InProgress, FolderAdd, Edit, Attachment, WarningFilled, Time, Bot, Pin, Locked
+  Download, FolderOpen, Earth, InProgress, FolderAdd, Edit, WarningFilled, Time, Bot, Pin, Locked
 } from '@carbon/icons-react';
+import Attachment from '../components/PaperclipIcon';
 import { useTheme } from '../context/ThemeContext';
 import { useAccounts, useAccountStats } from '../context/AccountContext';
 import MailApi from '../services/MailApi';
@@ -780,6 +781,10 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
   const [replyError, setReplyError] = useState(null);
   const [replyAttachments, setReplyAttachments] = useState([]);
   const replyFileInputRef = useRef(null);
+  // v7.3.0: Dateien per Drag & Drop ins Antwort-Panel ziehen — Zähler statt
+  // Boolean, weil dragenter/dragleave auch beim Überfahren von Kindelementen feuern.
+  const [replyDragging, setReplyDragging] = useState(false);
+  const replyDragDepthRef = useRef(0);
 
   // Toast for IndexedDB quota warning
   const [showQuotaWarning, setShowQuotaWarning] = useState(false);
@@ -2206,6 +2211,8 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
     setReplyError(null);
     setAttachProgress({});
     setReplyAttachments([]);
+    setReplyDragging(false);
+    replyDragDepthRef.current = 0;
     setHeaderExpanded(false);
     if (replyEditorRef.current) replyEditorRef.current.innerHTML = '';
   }, [selectedEmail?.uid]);
@@ -2217,7 +2224,7 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
       reader.onload = (e) => {
         const base64 = e.target.result.split(',')[1];
         setReplyAttachments(prev => [...prev, {
-          id: `${file.name}-${Date.now()}`,
+          id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           filename: file.name,
           contentType: file.type || 'application/octet-stream',
           content: base64,
@@ -3586,7 +3593,38 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
             <div className={`flex-1 overflow-auto ${c.bg} flex flex-col`}>
               {/* v2.9.3: Inline Reply Panel — oberhalb des Mails */}
               {replyMode && (
-                <div className={`border-b ${c.border} ${c.bgSecondary} flex-shrink-0`}>
+                <div
+                  className={`relative border-b ${c.border} ${c.bgSecondary} flex-shrink-0`}
+                  onDragEnter={(e) => {
+                    if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return;
+                    e.preventDefault();
+                    replyDragDepthRef.current += 1;
+                    setReplyDragging(true);
+                  }}
+                  onDragOver={(e) => {
+                    if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'copy';
+                  }}
+                  onDragLeave={() => {
+                    replyDragDepthRef.current = Math.max(0, replyDragDepthRef.current - 1);
+                    if (replyDragDepthRef.current === 0) setReplyDragging(false);
+                  }}
+                  onDrop={(e) => {
+                    if (!e.dataTransfer?.files?.length) return;
+                    e.preventDefault();
+                    replyDragDepthRef.current = 0;
+                    setReplyDragging(false);
+                    addReplyFiles(e.dataTransfer.files);
+                  }}
+                >
+                  {replyDragging && (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center rounded border-2 border-dashed border-cyan-400 bg-cyan-500/10 backdrop-blur-[1px] pointer-events-none">
+                      <span className="flex items-center gap-2 text-cyan-300 text-sm font-medium">
+                        <Attachment size={20} /> Dateien hier ablegen, um sie anzuhängen
+                      </span>
+                    </div>
+                  )}
                   {/* Reply header */}
                   <div className={`px-4 py-2 border-b ${c.border} flex items-center justify-between`}>
                     <div className={`text-sm font-medium ${c.text} flex items-center gap-2`}>
@@ -3691,10 +3729,10 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
                     <div className={`w-px h-4 ${c.border} border-l mx-1`} />
                     <button
                       onClick={() => replyFileInputRef.current?.click()}
-                      title="Anhang hinzufügen"
-                      className={`w-7 h-7 flex items-center justify-center rounded text-xs ${c.hover} ${replyAttachments.length > 0 ? 'text-cyan-400' : c.textSecondary} hover:text-cyan-400`}
+                      title="Anhang hinzufügen (oder Dateien ins Antwortfeld ziehen)"
+                      className={`h-7 px-2 flex items-center gap-1.5 rounded text-xs border ${c.border} ${c.hover} ${replyAttachments.length > 0 ? 'text-cyan-400' : c.textSecondary} hover:text-cyan-400`}
                     >
-                      <Attachment size={16} />
+                      <Attachment size={16} /> Anhang
                     </button>
                     <input
                       ref={replyFileInputRef}
@@ -3704,8 +3742,8 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
                       onChange={e => { addReplyFiles(e.target.files); e.target.value = ''; }}
                     />
                     {replyAttachments.length > 0 && (
-                      <span className={`ml-1 text-xs ${c.textSecondary} flex items-center gap-1`}>
-                        <Attachment size={16} /> {replyAttachments.length}
+                      <span className={`ml-1 text-xs ${c.textSecondary}`}>
+                        {replyAttachments.length}
                       </span>
                     )}
                   </div>
@@ -3739,6 +3777,11 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
                     data-placeholder="Antwort schreiben..."
                     onPaste={(e) => {
                       e.preventDefault();
+                      // v7.3.0: Eingefügte Dateien (z.B. Screenshot) als Anhang übernehmen
+                      if (e.clipboardData.files?.length > 0) {
+                        addReplyFiles(e.clipboardData.files);
+                        return;
+                      }
                       const text = e.clipboardData.getData('text/plain');
                       document.execCommand('insertText', false, text);
                     }}

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { Email, Attachment, Flag, Time, User, Folder, ArrowRight, InProgress } from '@carbon/icons-react';
+import { Email, Flag, Time, User, Folder, ArrowRight, InProgress } from '@carbon/icons-react';
+import Attachment from './PaperclipIcon';
 import { useTheme } from '../context/ThemeContext';
 
 export default function SearchResults({ results, isSearching, query, onSelectEmail }) {

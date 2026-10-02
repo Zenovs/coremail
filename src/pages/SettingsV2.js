@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Settings, Email, Security, Group, TextFont,
   SidePanelOpen, Tag, Notification, Edit, FolderDetails, Translate, Renew,
-  ColorPalette, Information
+  ColorPalette, Information, UserProfile
 } from '@carbon/icons-react';
 import { useTheme, themes } from '../context/ThemeContext';
 import UpdateSettings from './UpdateSettings';
@@ -15,6 +15,7 @@ import FontSettings from './FontSettings';
 import SpamFilterSettings from './SpamFilterSettings';
 import SenderManagement from './SenderManagement';
 import TranslationSettings from './TranslationSettings';
+import ProfileTransfer from './ProfileTransfer';
 
 function SettingsV2() {
   const { theme, currentTheme, changeTheme } = useTheme();
@@ -66,6 +67,7 @@ function SettingsV2() {
     { id: 'downloads',     name: 'Downloads',           Icon: FolderDetails  },
     { id: 'translation',   name: 'Übersetzung',         Icon: Translate      },
     { id: 'updates',       name: 'Updates',             Icon: Renew          },
+    { id: 'profile',       name: 'Profil übertragen',   Icon: UserProfile    },
   ];
 
   const themeOptions = [
@@ -287,6 +289,9 @@ function SettingsV2() {
 
       case 'updates':
         return <UpdateSettings />;
+
+      case 'profile':
+        return <ProfileTransfer />;
       
       default:
         return null;

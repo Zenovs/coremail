@@ -12,9 +12,10 @@ import {
   TextAlignLeft, TextAlignCenter, TextAlignRight,
   TextClearFormat,
   Document, DocumentBlank, Portfolio, Money, Template, Code,
-  Attachment, Close, Send, Checkmark, InProgress, Edit, PenFountain, View, Time, Link,
+  Close, Send, Checkmark, InProgress, Edit, PenFountain, View, Time, Link,
   Image, DocumentPdf, Music, Video, Box
 } from '@carbon/icons-react';
+import Attachment from '../components/PaperclipIcon';
 
 // ─── HTML-Vorlagen ───────────────────────────────────────────────────────────
 const HTML_TEMPLATES = [

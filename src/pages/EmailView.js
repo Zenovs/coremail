@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   TrashCan, Email, EmailNew, Reply, ReplyAll, SendAlt, ArrowLeft, InProgress,
-  WarningFilled, WarningAlt, Close, Checkmark, Attachment, Download, FolderOpen, View,
+  WarningFilled, WarningAlt, Close, Checkmark, Download, FolderOpen, View,
   Image, DocumentPdf, DocumentBlank, Music, Video, Box, NotificationOff, Bot, Archive
 } from '@carbon/icons-react';
+import Attachment from '../components/PaperclipIcon';
 import { useTheme } from '../context/ThemeContext';
 import { useAccounts } from '../context/AccountContext';
 import MailApi from '../services/MailApi';

@@ -154,6 +154,7 @@ echo "CoreMail wurde komplett entfernt!"
 - **Ordner-Navigation** — alle IMAP-Ordner durchsuchen, erstellen, umbenennen, löschen
 - **Tag-Eingabe für Empfänger** — An/CC/BCC als einzelne Chips
 - **Hintergrund-Sync** — automatischer Mail-Abruf alle 1–30 Min konfigurierbar
+- **Profil übertragen** — Konten, Kategorien und Signaturen in eine verschlüsselte Datei exportieren und auf einem neuen Rechner importieren; Datei und Einmal-Passwort sind nur 5 Minuten gültig und nur einmal verwendbar
 
 ### 🔍 Volltextsuche (FTS5)
 - **Lokaler Index** mit SQLite + FTS5 — alle abgerufenen Mails sind sofort durchsuchbar
@@ -168,6 +169,7 @@ echo "CoreMail wurde komplett entfernt!"
 - **Alle herunterladen** — alle Anhänge einer Mail auf einmal
 - **Vorschau** — Bilder und PDFs direkt in der App
 - **Drag &amp; Drop** — Dateien direkt ins Compose-Fenster ziehen
+- **Anhänge in der Inline-Antwort** — per „Anhang“-Knopf, Drag &amp; Drop oder Einfügen (Ctrl+V)
 
 ### 🛡️ Spam-Schutz &amp; Kategorisierung
 - **Automatischer Spam-Filter** — Werbung, Phishing, Schadsoftware (heuristisch, ohne KI)
