@@ -262,8 +262,8 @@ function AccountManager() {
         {/* v2.9.0: Info Banner */}
         <div className={`mb-6 p-4 ${c.card} ${c.border} border rounded-xl`}>
           <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-10 h-10 bg-cyan-500/20 rounded-lg flex items-center justify-center">
-              <Email size={20} className="text-cyan-400" />
+            <div className="flex-shrink-0 w-10 h-10 bg-accent/15 rounded-lg flex items-center justify-center">
+              <Email size={20} className="text-accent" />
             </div>
             <div className="flex-1">
               <h3 className={`font-medium ${c.text}`}>CoreMail Desktop – E-Mail-Client</h3>
@@ -325,7 +325,7 @@ function AccountManager() {
                   placeholder="Name"
                   value={categoryForm.name}
                   onChange={e => setCategoryForm(f => ({ ...f, name: e.target.value }))}
-                  className={`w-full px-4 py-2 rounded-lg ${c.input} focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+                  className={`w-full px-4 py-2 rounded-lg ${c.input} focus:outline-none focus:ring-2 focus:ring-accent`}
                 />
                 <div className="flex items-center gap-3">
                   <span className={c.textSecondary}>Farbe:</span>
@@ -375,7 +375,7 @@ function AccountManager() {
                             Microsoft 365
                           </span>
                         ) : (
-                          <span className="px-1.5 py-0.5 text-xs bg-cyan-500/20 text-cyan-400 rounded flex items-center gap-1">
+                          <span className="px-1.5 py-0.5 text-xs bg-accent/15 text-accent rounded flex items-center gap-1">
                             <Email size={16} />
                             IMAP/SMTP
                           </span>
@@ -438,11 +438,11 @@ function AccountManager() {
                     </button>
                     <button
                       onClick={() => setAccountType('imap')}
-                      className={`p-5 rounded-xl ${c.bgTertiary} ${c.border} border hover:border-cyan-500 transition-colors text-left`}
+                      className={`p-5 rounded-xl ${c.bgTertiary} ${c.border} border hover:border-accent/60 transition-colors text-left`}
                     >
                       <div className="flex items-center gap-3 mb-2">
-                        <div className="w-10 h-10 bg-cyan-500/20 rounded-lg flex items-center justify-center">
-                          <Email size={20} className="text-cyan-400" />
+                        <div className="w-10 h-10 bg-accent/15 rounded-lg flex items-center justify-center">
+                          <Email size={20} className="text-accent" />
                         </div>
                         <span className={`font-semibold ${c.text}`}>IMAP / SMTP</span>
                       </div>
@@ -584,7 +584,7 @@ function AccountManager() {
                         value={accountForm.name}
                         onChange={e => setAccountForm(f => ({ ...f, name: e.target.value }))}
                         placeholder="z.B. Firma E-Mail"
-                        className={`w-full px-4 py-2 rounded-lg ${c.input} focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+                        className={`w-full px-4 py-2 rounded-lg ${c.input} focus:outline-none focus:ring-2 focus:ring-accent`}
                       />
                     </div>
                     <div>
@@ -592,7 +592,7 @@ function AccountManager() {
                       <select
                         value={accountForm.categoryId}
                         onChange={e => setAccountForm(f => ({ ...f, categoryId: e.target.value }))}
-                        className={`w-full px-4 py-2 rounded-lg ${c.input} focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+                        className={`w-full px-4 py-2 rounded-lg ${c.input} focus:outline-none focus:ring-2 focus:ring-accent`}
                       >
                         {categories.map(cat => (
                           <option key={cat.id} value={cat.id}>{cat.name}</option>
@@ -609,7 +609,7 @@ function AccountManager() {
                       value={accountForm.displayName || ''}
                       onChange={e => setAccountForm(f => ({ ...f, displayName: e.target.value.slice(0, 100) }))}
                       placeholder="z.B. Max Mustermann"
-                      className={`w-full px-4 py-2 rounded-lg ${c.input} focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+                      className={`w-full px-4 py-2 rounded-lg ${c.input} focus:outline-none focus:ring-2 focus:ring-accent`}
                     />
                     <p className={`text-xs ${c.textSecondary} mt-1`}>Optional – wird als Absendername angezeigt.</p>
                   </div>

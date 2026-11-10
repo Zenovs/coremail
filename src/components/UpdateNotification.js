@@ -131,15 +131,15 @@ function UpdateNotification({ onOpenSettings }) {
   if (state.status === UpdateStatus.UPDATE_AVAILABLE) {
     return (
       <div className="fixed bottom-4 right-4 z-50 animate-slide-up">
-        <div className={`${c.card} border border-cyan-500/50 rounded-xl p-4 shadow-lg max-w-md`}>
+        <div className={`${c.card} border border-accent/30 rounded-xl p-4 shadow-lg max-w-md`}>
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
-              <Download size={20} className="text-cyan-400" />
+            <div className="w-10 h-10 rounded-full bg-accent/15 flex items-center justify-center flex-shrink-0">
+              <Download size={20} className="text-accent" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <p className={`font-semibold ${c.text}`}>Update verfügbar</p>
-                <span className="px-2 py-0.5 text-xs bg-cyan-500/20 text-cyan-400 rounded-full">
+                <span className="px-2 py-0.5 text-xs bg-accent/15 text-accent rounded-full">
                   v{state.updateInfo?.latestVersion}
                 </span>
               </div>
@@ -153,7 +153,7 @@ function UpdateNotification({ onOpenSettings }) {
               <div className="flex items-center gap-2 mt-3">
                 <button
                   onClick={handleDownload}
-                  className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white text-sm rounded-lg transition-colors flex items-center gap-2"
+                  className="px-4 py-1.5 bg-accentbg hover:bg-accentbghover text-white text-sm rounded-lg transition-colors flex items-center gap-2"
                 >
                   <Download size={16} />
                   Jetzt updaten
@@ -199,13 +199,13 @@ function UpdateNotification({ onOpenSettings }) {
       <div className="fixed bottom-4 right-4 z-50 animate-slide-up">
         <div className={`${c.card} ${c.border} border rounded-xl p-4 shadow-lg max-w-sm`}>
           <div className="flex items-start gap-3">
-            <InProgress size={20} className="text-cyan-400 animate-spin flex-shrink-0 mt-0.5" />
+            <InProgress size={20} className="text-accent animate-spin flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <p className={`font-medium ${c.text}`}>Update wird heruntergeladen...</p>
               <div className="mt-2">
                 <div className={`w-full h-2 ${c.bgTertiary} rounded-full overflow-hidden`}>
                   <div 
-                    className="h-full bg-cyan-500 transition-all duration-300"
+                    className="h-full bg-accentbg transition-all duration-300"
                     style={{ width: `${Math.min(state.progress, 100)}%` }}
                   />
                 </div>

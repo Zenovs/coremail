@@ -3,36 +3,27 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="theme-color" content="#f3f2f1" />
   <meta name="description" content="CoreMail Desktop - Minimaler E-Mail-Client" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <title>CoreMail Desktop</title>
+  <script src="%PUBLIC_URL%/theme-boot.js"></script>
   <style>
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
+    /* v8.0: Hintergrund folgt dem gespeicherten Theme (hell = Standard),
+       damit beim Start kein dunkler/heller Blitz entsteht. Das Attribut
+       data-mode wird gleich im Script unten gesetzt und von React übernommen. */
+    html { background-color: #ffffff; }
+    html[data-mode="dark"] { background-color: #292929; }
     body {
-      background-color: #0a0a0a;
-      font-family: 'JetBrains Mono', monospace;
+      background-color: transparent;
+      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
       overflow: hidden;
-    }
-    /* Custom Scrollbar */
-    ::-webkit-scrollbar {
-      width: 8px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #1a1a1a;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #333;
-      border-radius: 4px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: #444;
     }
   </style>
 </head>

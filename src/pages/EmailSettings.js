@@ -121,7 +121,7 @@ function EmailSettings() {
                 onClick={() => handleReadModeChange(option.id)}
                 className={`w-full p-4 rounded-xl border-2 transition-colors flex items-start gap-4 text-left ${
                   markAsReadMode === option.id
-                    ? `${c.accentBorder || 'border-cyan-500'} ${c.bgTertiary}`
+                    ? `${c.accentBorder || 'border-accent'} ${c.bgTertiary}`
                     : `${c.border} ${c.hover}`
                 }`}
               >
@@ -158,7 +158,7 @@ function EmailSettings() {
               onClick={() => handleRefreshIntervalChange(option.id)}
               className={`p-3 rounded-xl border-2 transition-colors text-center ${
                 refreshInterval === option.id
-                  ? `${c.accentBorder || 'border-cyan-500'} ${c.bgTertiary}`
+                  ? `${c.accentBorder || 'border-accent'} ${c.bgTertiary}`
                   : `${c.border} ${c.hover}`
               }`}
             >
@@ -207,7 +207,7 @@ function EmailSettings() {
               onChange={(e) => handleLocalStorageToggle(e.target.checked)}
               className="sr-only peer"
             />
-            <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
+            <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accentbg"></div>
           </label>
         </div>
 

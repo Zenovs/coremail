@@ -63,7 +63,7 @@ function UrlPromptDialog({ title, open, onSubmit, onClose, c, placeholder = 'htt
             if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
           }}
           placeholder={placeholder}
-          className={`w-full px-3 py-2 rounded-lg ${c.input} border outline-none focus:ring-2 focus:ring-cyan-500 text-sm ${error ? 'ring-2 ring-red-500' : ''}`}
+          className={`w-full px-3 py-2 rounded-lg ${c.input} border outline-none focus:ring-2 focus:ring-accent text-sm ${error ? 'ring-2 ring-red-500' : ''}`}
         />
         {error && (
           <div className="text-xs text-red-400 mt-2">{error}</div>

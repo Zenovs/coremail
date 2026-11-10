@@ -100,19 +100,19 @@ function EmailTagInput({ label, tags, onChange, placeholder, c, isLarge = false 
       </label>
       <div className="flex-1 relative">
       <div
-        className={`flex flex-wrap gap-1.5 px-3 py-2 rounded-lg ${c.input} focus-within:ring-2 focus-within:ring-cyan-500 cursor-text min-h-[36px]`}
+        className={`flex flex-wrap gap-1.5 px-3 py-2 rounded-lg ${c.input} focus-within:ring-2 focus-within:ring-accent cursor-text min-h-[36px]`}
         onClick={() => inputRef.current?.focus()}
       >
         {tags.map((tag, i) => (
           <span
             key={i}
-            className="inline-flex items-center gap-1 px-2 py-0.5 bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 rounded-md text-xs font-medium flex-shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-0.5 bg-accent/15 text-accent border border-accent/30 rounded-md text-xs font-medium flex-shrink-0"
           >
             {tag}
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); removeTag(i); }}
-              className="hover:text-white hover:bg-cyan-500/40 rounded-full w-3.5 h-3.5 flex items-center justify-center leading-none"
+              className="hover:text-white hover:bg-accent/20 rounded-full w-3.5 h-3.5 flex items-center justify-center leading-none"
             >
               ×
             </button>
@@ -142,9 +142,9 @@ function EmailTagInput({ label, tags, onChange, placeholder, c, isLarge = false 
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => pickSuggestion(s)}
               onMouseEnter={() => setHighlightIdx(i)}
-              className={`w-full text-left px-3 py-2 flex items-center gap-2 ${i === highlightIdx ? 'bg-cyan-500/20' : ''}`}
+              className={`w-full text-left px-3 py-2 flex items-center gap-2 ${i === highlightIdx ? 'bg-accent/15' : ''}`}
             >
-              <span className="w-7 h-7 rounded-full bg-cyan-600/40 text-cyan-200 flex items-center justify-center text-xs font-semibold flex-shrink-0 uppercase">
+              <span className="w-7 h-7 rounded-full bg-accent/15 text-accent flex items-center justify-center text-xs font-semibold flex-shrink-0 uppercase">
                 {(s.name || s.email).charAt(0)}
               </span>
               <span className="min-w-0">

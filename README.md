@@ -47,8 +47,10 @@ CoreMail Desktop ist ein **freier, schlanker E-Mail-Client** für **Linux, Windo
 - **List-Unsubscribe** — One-Click-Abmeldung von Newslettern (RFC 8058)
 - **Mehrere Signaturen pro Konto** — Standard wählbar, Picker beim Verfassen
 - **Lokaler Spam-Filter** mit Phishing/Virus-Erkennung — rein heuristisch
+- **Aufgeräumte Oberfläche im Outlook-Stil (v8)** — App-Leiste, Konten + Ordner in einer Spalte, Mail-Liste, Lese-Blatt
+- **Mails immer auf weissem Grund** — in jedem Design bleibt der Mailinhalt so lesbar, wie er gesetzt wurde
 - **Carbon Design System Icons** — einheitliche, monochrome UI
-- **11 Themes** (Dark, Light, Glas, Retro, Foundations, …)
+- **11 Themes** (Hell als Standard, Dunkel, Glas, Retro, Foundations, …)
 - **Tracking-Pixel-Schutz** — externe Bilder werden default geblockt
 - **Raspberry Pi 4/5 (arm64)** Support
 
@@ -199,8 +201,11 @@ echo "CoreMail wurde komplett entfernt!"
 - **Serientermine und Absagen** werden als solche gekennzeichnet
 
 ### 🎨 Design &amp; Darstellung
+- **Outlook-artiges Layout (v8)** — schmale App-Leiste, Konten und Ordner in einer Spalte, Mail-Liste mit Avataren und Ungelesen-Balken, Kommandoleiste mit «Neue E-Mail», Löschen, Archivieren, Antworten …
+- **Lese-Blatt immer weiss** — Betreff, Absender und Mailinhalt liegen in jedem Theme auf weissem Grund
+- **Ruhige Spalten** — kein Auf- und Zuklappen beim Hovern mehr; die Ordner-Spalte lässt sich bewusst auf Icons einklappen, Breiten per Drag
 - **Carbon Design System Icons** — einheitliches, professionelles Erscheinungsbild
-- **11 Themes**: Dark, Light, Minimal, Morphismus, Glas, Retro, Foundations, Lollipop, Nerd, Colorful, Indie
+- **11 Themes**: Hell (Standard), Dunkel, Minimal, Morphismus, Glas, Retro, Foundations, Lollipop, Nerd, Colorful, Indie
 - **Dynamische App-Icons** — passen sich automatisch ans Theme an
 - **Schriftart-Auswahl** — Google Fonts direkt in den Einstellungen
 - **Anpassbare Spaltenbreiten** — per Drag

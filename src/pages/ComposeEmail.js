@@ -613,9 +613,9 @@ function ComposeEmail({ onBack, replyTo: replyToProp = null, composeData = null 
     >
       {/* Drag-Overlay */}
       {isDragging && (
-        <div className="absolute inset-0 bg-cyan-500/10 border-4 border-dashed border-cyan-500 z-50 flex items-center justify-center backdrop-blur-sm">
+        <div className="absolute inset-0 bg-accent/10 border-4 border-dashed border-accent z-50 flex items-center justify-center backdrop-blur-sm">
           <div className={`text-center ${c.text}`}>
-            <Attachment size={64} className="mx-auto mb-4 text-cyan-400" />
+            <Attachment size={64} className="mx-auto mb-4 text-accent" />
             <p className="text-xl font-semibold">Dateien hier ablegen</p>
           </div>
         </div>
@@ -655,7 +655,7 @@ function ComposeEmail({ onBack, replyTo: replyToProp = null, composeData = null 
             {/* Templates Button */}
             <button
               onClick={() => setShowTemplates(!showTemplates)}
-              className={`px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-1 ${showTemplates ? 'bg-cyan-500/30 text-cyan-400' : `${c.bgTertiary} ${c.hover} ${c.textSecondary}`}`}
+              className={`px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-1 ${showTemplates ? 'bg-accent/15 text-accent' : `${c.bgTertiary} ${c.hover} ${c.textSecondary}`}`}
             >
               <Template size={16} /> Vorlagen
             </button>
@@ -741,7 +741,7 @@ function ComposeEmail({ onBack, replyTo: replyToProp = null, composeData = null 
                     <select
                       value={selectedAccountId || ''}
                       onChange={e => setSelectedAccountId(e.target.value)}
-                      className={`w-full px-3 py-1.5 rounded-lg ${c.input} text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+                      className={`w-full px-3 py-1.5 rounded-lg ${c.input} text-sm focus:outline-none focus:ring-2 focus:ring-accent`}
                     >
                       {accounts.map(acc => (
                         <option key={acc.id} value={acc.id}>
@@ -762,7 +762,7 @@ function ComposeEmail({ onBack, replyTo: replyToProp = null, composeData = null 
                       value={senderName}
                       onChange={e => setSenderName(e.target.value)}
                       placeholder="z. B. Max Mustermann"
-                      className={`flex-1 px-3 py-1 rounded ${c.input} text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+                      className={`flex-1 px-3 py-1 rounded ${c.input} text-sm focus:outline-none focus:ring-2 focus:ring-accent`}
                     />
                   </div>
                 </div>
@@ -804,7 +804,7 @@ function ComposeEmail({ onBack, replyTo: replyToProp = null, composeData = null 
                   value={form.subject}
                   onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
                   placeholder="Betreff eingeben..."
-                  className={`flex-1 px-3 py-1.5 rounded-lg ${c.input} text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+                  className={`flex-1 px-3 py-1.5 rounded-lg ${c.input} text-sm focus:outline-none focus:ring-2 focus:ring-accent`}
                 />
               </div>
             </div>
@@ -839,7 +839,7 @@ function ComposeEmail({ onBack, replyTo: replyToProp = null, composeData = null 
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         {!att.loaded && uploadProgress[att.id] !== undefined && (
                           <div className="w-16 h-1 bg-gray-600 rounded-full">
-                            <div className="h-full bg-cyan-500 rounded-full" style={{ width: `${uploadProgress[att.id]}%` }} />
+                            <div className="h-full bg-accentbg rounded-full" style={{ width: `${uploadProgress[att.id]}%` }} />
                           </div>
                         )}
                         {att.loaded && <Checkmark size={16} className="text-green-400" />}
@@ -869,8 +869,8 @@ function ComposeEmail({ onBack, replyTo: replyToProp = null, composeData = null 
                       onClick={() => switchMode(tab.id)}
                       className={`px-4 py-2 text-xs font-medium transition-colors border-b-2 inline-flex items-center gap-1 ${
                         editorMode === tab.id
-                          ? 'border-cyan-500 text-cyan-400'
-                          : `border-transparent ${c.textSecondary} hover:text-cyan-400`
+                          ? 'border-accent text-accent'
+                          : `border-transparent ${c.textSecondary} hover:text-accent`
                       }`}
                     >
                       <TabIcon size={16} /> {tab.label}
@@ -904,7 +904,7 @@ function ComposeEmail({ onBack, replyTo: replyToProp = null, composeData = null 
                             key={bi}
                             onMouseDown={e => { e.preventDefault(); execFormat(btn.cmd); }}
                             title={btn.title}
-                            className={`w-7 h-7 flex items-center justify-center rounded ${c.hover} ${c.textSecondary} hover:text-cyan-400 transition-colors`}
+                            className={`w-7 h-7 flex items-center justify-center rounded ${c.hover} ${c.textSecondary} hover:text-accent transition-colors`}
                           >
                             <BtnIcon size={16} />
                           </button>
@@ -923,7 +923,7 @@ function ComposeEmail({ onBack, replyTo: replyToProp = null, composeData = null 
                     onMouseDown={e => { e.preventDefault(); insertLink(); }}
                     title="Link einfügen"
                     aria-label="Link einfügen"
-                    className={`w-7 h-7 flex items-center justify-center rounded text-xs ${c.hover} ${c.textSecondary} hover:text-cyan-400`}
+                    className={`w-7 h-7 flex items-center justify-center rounded text-xs ${c.hover} ${c.textSecondary} hover:text-accent`}
                   >
                     <Link size={16} />
                   </button>
@@ -988,7 +988,7 @@ function ComposeEmail({ onBack, replyTo: replyToProp = null, composeData = null 
                   id="useSignature"
                   checked={useSignature}
                   onChange={e => setUseSignature(e.target.checked)}
-                  className="w-4 h-4 rounded accent-cyan-500"
+                  className="w-4 h-4 rounded accent-accentbg"
                 />
                 <label htmlFor="useSignature" className={`${c.textSecondary} cursor-pointer text-xs flex items-center gap-1`}><PenFountain size={16} /> Signatur anhängen</label>
                 {/* Picker — nur anzeigen wenn mehr als eine Signatur konfiguriert */}
@@ -1107,7 +1107,7 @@ function ComposeEmail({ onBack, replyTo: replyToProp = null, composeData = null 
                 value={customHtmlPaste}
                 onChange={e => setCustomHtmlPaste(e.target.value)}
                 placeholder="HTML-Code hier einfügen..."
-                className={`w-full h-56 px-4 py-3 rounded-lg ${c.input} font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500 resize-none`}
+                className={`w-full h-56 px-4 py-3 rounded-lg ${c.input} font-mono text-xs focus:outline-none focus:ring-2 focus:ring-accent resize-none`}
                 autoFocus
               />
               {customHtmlPaste && (

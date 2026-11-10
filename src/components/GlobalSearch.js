@@ -79,7 +79,7 @@ export default function GlobalSearch({ onSelectEmail }) {
         style={{ maxHeight: 'calc(100vh - 160px)' }}
       >
         {/* Search Header */}
-        <form onSubmit={handleSubmit} className="p-4 border-b border-gray-700">
+        <form onSubmit={handleSubmit} className={`p-4 border-b ${c.border}`}>
           <div className="flex items-center gap-3">
             <Search size={20} className={c.textSecondary} />
             <input
@@ -92,12 +92,12 @@ export default function GlobalSearch({ onSelectEmail }) {
               autoComplete="off"
             />
             {isSearching && (
-              <InProgress size={20} className="text-orange-500 animate-spin" />
+              <InProgress size={20} className={`${c.accent} animate-spin`} />
             )}
             <button
               type="button"
               onClick={() => setShowFilters(!showFilters)}
-              className={`p-2 rounded-lg transition-colors ${showFilters ? 'bg-orange-500/20 text-orange-500' : `${c.buttonSecondary}`}`}
+              className={`p-2 rounded-lg transition-colors ${showFilters ? `${c.selected} ${c.accent}` : `${c.hover} ${c.textSecondary}`}`}
               title="Filter anzeigen"
             >
               <Filter size={20} />
@@ -106,7 +106,7 @@ export default function GlobalSearch({ onSelectEmail }) {
             <button
               type="button"
               onClick={closeSearch}
-              className={`p-2 rounded-lg ${c.buttonSecondary} hover:bg-red-500/20 hover:text-red-500 transition-colors`}
+              className={`p-2 rounded-lg ${c.hover} ${c.textSecondary} transition-colors`}
               title="Schliessen"
             >
               <Close size={20} />
@@ -115,14 +115,14 @@ export default function GlobalSearch({ onSelectEmail }) {
 
           {/* Quick Search Hint */}
           <div className={`mt-2 text-xs ${c.textSecondary}`}>
-            Drücke <kbd className="px-1.5 py-0.5 bg-gray-700 rounded text-gray-300">Enter</kbd> für vollständige Suche oder
-            <kbd className="px-1.5 py-0.5 bg-gray-700 rounded text-gray-300 ml-1">Esc</kbd> zum Schliessen
+            Drücke <kbd className="cm-kbd">Enter</kbd> für die vollständige Suche oder
+            <kbd className="cm-kbd ml-1">Esc</kbd> zum Schliessen
           </div>
         </form>
 
         {/* Advanced Filters */}
         {showFilters && (
-          <div className="p-4 border-b border-gray-700 bg-gray-900/50">
+          <div className={`p-4 border-b ${c.border} ${c.bgTertiary}`}>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {/* Account Filter */}
               <div>
@@ -191,7 +191,7 @@ export default function GlobalSearch({ onSelectEmail }) {
                   type="checkbox"
                   checked={filters.unreadOnly}
                   onChange={(e) => updateFilter('unreadOnly', e.target.checked)}
-                  className="w-4 h-4 rounded accent-orange-500"
+                  className="w-4 h-4 rounded accent-ms-blue"
                 />
                 <Email size={16} />
                 Nur ungelesene
@@ -202,7 +202,7 @@ export default function GlobalSearch({ onSelectEmail }) {
                   type="checkbox"
                   checked={filters.flaggedOnly}
                   onChange={(e) => updateFilter('flaggedOnly', e.target.checked)}
-                  className="w-4 h-4 rounded accent-orange-500"
+                  className="w-4 h-4 rounded accent-ms-blue"
                 />
                 <Flag size={16} />
                 Nur markierte
@@ -213,7 +213,7 @@ export default function GlobalSearch({ onSelectEmail }) {
                   type="checkbox"
                   checked={filters.hasAttachments}
                   onChange={(e) => updateFilter('hasAttachments', e.target.checked)}
-                  className="w-4 h-4 rounded accent-orange-500"
+                  className="w-4 h-4 rounded accent-ms-blue"
                 />
                 <Attachment size={16} />
                 Mit Anhängen
@@ -222,7 +222,7 @@ export default function GlobalSearch({ onSelectEmail }) {
               <button
                 type="button"
                 onClick={resetFilters}
-                className={`ml-auto text-sm ${c.textSecondary} hover:text-orange-500 transition-colors`}
+                className={`ml-auto text-sm ${c.textSecondary} hover:underline transition-colors`}
               >
                 Filter zurücksetzen
               </button>
@@ -232,13 +232,13 @@ export default function GlobalSearch({ onSelectEmail }) {
 
         {/* Suggestions (Quick Search) */}
         {suggestions.length > 0 && !isSearching && searchResults.length === 0 && (
-          <div className="p-2 border-b border-gray-700">
+          <div className={`p-2 border-b ${c.border}`}>
             <div className={`px-2 py-1 text-xs ${c.textSecondary}`}>Vorschläge</div>
             {suggestions.map((suggestion) => (
               <button
                 key={suggestion.uid}
                 onClick={() => handleSuggestionClick(suggestion)}
-                className={`w-full px-3 py-2 text-left rounded-lg hover:bg-gray-700/50 transition-colors flex items-center gap-3`}
+                className={`w-full px-3 py-2 text-left rounded-lg ${c.hover} transition-colors flex items-center gap-3`}
               >
                 <Email size={16} className={`${c.textSecondary} flex-shrink-0`} />
                 <div className="flex-1 min-w-0">
@@ -252,14 +252,14 @@ export default function GlobalSearch({ onSelectEmail }) {
 
         {/* Error Message */}
         {searchError && (
-          <div className="p-4 bg-red-500/10 border-b border-red-500/20">
-            <p className="text-red-400 text-sm flex items-center gap-1.5"><WarningAlt size={16} className="flex-shrink-0" /> {searchError}</p>
+          <div className="p-3">
+            <p className="cm-banner cm-banner-red text-sm"><WarningAlt size={16} className="flex-shrink-0" /> {searchError}</p>
           </div>
         )}
 
         {/* Search Stats */}
         {searchStats && !isSearching && (
-          <div className={`px-4 py-2 border-b border-gray-700 ${c.textSecondary} text-xs flex items-center justify-between`}>
+          <div className={`px-4 py-2 border-b ${c.border} ${c.textSecondary} text-xs flex items-center justify-between`}>
             <span>
               {searchStats.totalFound} Ergebnisse für "{searchStats.query}"
               {searchStats.totalFound > 200 && " (max. 200 angezeigt)"}
@@ -285,8 +285,8 @@ export default function GlobalSearch({ onSelectEmail }) {
 
         {/* Search Errors from accounts */}
         {searchStats?.errors && searchStats.errors.length > 0 && (
-          <div className="p-3 border-t border-gray-700 bg-yellow-500/10">
-            <div className="text-yellow-500 text-xs flex items-start gap-1">
+          <div className={`p-3 border-t ${c.border}`}>
+            <div className="cm-banner cm-banner-amber text-xs items-start gap-1">
               <WarningAlt size={16} className="flex-shrink-0 mt-0.5" /> Einige Konten konnten nicht durchsucht werden:
               {searchStats.errors.map((err, idx) => (
                 <span key={idx} className="ml-2">{err.accountName}</span>

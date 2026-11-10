@@ -155,8 +155,8 @@ function UpdateSettings() {
       <div className={`${c.card} ${c.border} border rounded-xl p-6`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-cyan-500/20 flex items-center justify-center">
-              <Flash size={24} className="text-cyan-400" />
+            <div className="w-12 h-12 rounded-xl bg-accent/15 flex items-center justify-center">
+              <Flash size={24} className="text-accent" />
             </div>
             <div>
               <h3 className={`text-lg font-semibold ${c.text}`}>CoreMail Desktop</h3>
@@ -210,17 +210,17 @@ function UpdateSettings() {
 
       {/* Update Available */}
       {hasUpdate && state.updateInfo && (
-        <div className={`${c.card} border border-cyan-500 rounded-xl p-6`}>
+        <div className={`${c.card} border border-accent rounded-xl p-6`}>
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
-              <Download size={24} className="text-cyan-400" />
+            <div className="w-12 h-12 rounded-full bg-accent/15 flex items-center justify-center flex-shrink-0">
+              <Download size={24} className="text-accent" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3">
                 <h3 className={`text-lg font-semibold ${c.text}`}>
                   Update verfügbar
                 </h3>
-                <span className="px-3 py-1 bg-cyan-500/20 text-cyan-400 text-sm font-medium rounded-full">
+                <span className="px-3 py-1 bg-accent/15 text-accent text-sm font-medium rounded-full">
                   v{state.updateInfo.latestVersion}
                 </span>
               </div>
@@ -253,7 +253,7 @@ function UpdateSettings() {
       {isDownloading && (
         <div className={`${c.card} ${c.border} border rounded-xl p-6`}>
           <div className="flex items-center gap-4 mb-4">
-            <InProgress size={24} className="text-cyan-400 animate-spin" />
+            <InProgress size={24} className="text-accent animate-spin" />
             <div>
               <h3 className={`font-semibold ${c.text}`}>Download läuft...</h3>
               <p className={`text-sm ${c.textSecondary}`}>
@@ -263,7 +263,7 @@ function UpdateSettings() {
           </div>
           <div className={`w-full h-3 ${c.bgTertiary} rounded-full overflow-hidden`}>
             <div 
-              className="h-full bg-cyan-500 transition-all duration-300"
+              className="h-full bg-accentbg transition-all duration-300"
               style={{ width: `${Math.min(state.progress, 100)}%` }}
             />
           </div>
@@ -351,7 +351,7 @@ function UpdateSettings() {
       {/* Auto-Update Settings */}
       <div className={`${c.card} ${c.border} border rounded-xl p-6`}>
         <div className="flex items-center gap-3 mb-6">
-          <Settings size={20} className="text-cyan-400" />
+          <Settings size={20} className="text-accent" />
           <h3 className={`text-lg font-semibold ${c.text}`}>Update-Einstellungen</h3>
         </div>
         
@@ -362,7 +362,7 @@ function UpdateSettings() {
               type="checkbox"
               checked={settings.autoCheckUpdates}
               onChange={(e) => handleSettingChange('autoCheckUpdates', e.target.checked)}
-              className="w-5 h-5 mt-0.5 rounded accent-cyan-500"
+              className="w-5 h-5 mt-0.5 rounded accent-accentbg"
             />
             <div>
               <span className={c.text}>Automatisch nach Updates suchen</span>
@@ -379,7 +379,7 @@ function UpdateSettings() {
               checked={settings.autoDownload}
               onChange={(e) => handleSettingChange('autoDownload', e.target.checked)}
               disabled={!settings.autoCheckUpdates}
-              className="w-5 h-5 mt-0.5 rounded accent-cyan-500 disabled:opacity-50"
+              className="w-5 h-5 mt-0.5 rounded accent-accentbg disabled:opacity-50"
             />
             <div className={!settings.autoCheckUpdates ? 'opacity-50' : ''}>
               <span className={c.text}>Updates automatisch herunterladen</span>
@@ -396,7 +396,7 @@ function UpdateSettings() {
               checked={settings.autoInstall}
               onChange={(e) => handleSettingChange('autoInstall', e.target.checked)}
               disabled={!settings.autoDownload}
-              className="w-5 h-5 mt-0.5 rounded accent-cyan-500 disabled:opacity-50"
+              className="w-5 h-5 mt-0.5 rounded accent-accentbg disabled:opacity-50"
             />
             <div className={!settings.autoDownload ? 'opacity-50' : ''}>
               <span className={c.text}>Updates automatisch installieren</span>
@@ -412,7 +412,7 @@ function UpdateSettings() {
               type="checkbox"
               checked={settings.showNotifications}
               onChange={(e) => handleSettingChange('showNotifications', e.target.checked)}
-              className="w-5 h-5 mt-0.5 rounded accent-cyan-500"
+              className="w-5 h-5 mt-0.5 rounded accent-accentbg"
             />
             <div>
               <span className={c.text}>Update-Benachrichtigungen anzeigen</span>

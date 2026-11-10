@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   Settings, Email, Security, Group, TextFont,
-  SidePanelOpen, Tag, Notification, Edit, FolderDetails, Translate, Renew,
+  Tag, Notification, Edit, FolderDetails, Translate, Renew,
   ColorPalette, Information, UserProfile
 } from '@carbon/icons-react';
 import { useTheme, themes } from '../context/ThemeContext';
 import UpdateSettings from './UpdateSettings';
 import NotificationSettings from './NotificationSettings';
 import SignatureEditor from './SignatureEditor';
-import SidebarSettings from './SidebarSettings';
 import CategorySettings from './CategorySettings';
 import EmailSettings from './EmailSettings';
 import FontSettings from './FontSettings';
@@ -60,7 +59,6 @@ function SettingsV2() {
     { id: 'spamfilter',    name: 'Spam-Filter',         Icon: Security       },
     { id: 'senders',       name: 'Absender',            Icon: Group          },
     { id: 'font',          name: 'Schriftart',          Icon: TextFont       },
-    { id: 'sidebar',       name: 'Sidebar',             Icon: SidePanelOpen  },
     { id: 'categories',    name: 'Kategorien',          Icon: Tag            },
     { id: 'notifications', name: 'Benachrichtigungen',  Icon: Notification   },
     { id: 'signatures',    name: 'Signaturen',          Icon: Edit           },
@@ -71,9 +69,9 @@ function SettingsV2() {
   ];
 
   const themeOptions = [
-    { id: 'dark', name: 'Dark', desc: 'Dunkles Design mit Cyan-Akzenten', preview: 'bg-gray-900', previewBorder: 'border-cyan-500/50' },
-    { id: 'light', name: 'Light', desc: 'Helles Design mit blauen Akzenten', preview: 'bg-white', previewBorder: 'border-blue-500/50' },
-    { id: 'minimal', name: 'Minimal', desc: 'Minimalistisch in Schwarz/Weiß', preview: 'bg-gray-100', previewBorder: 'border-gray-400' },
+    { id: 'light', name: 'Hell (Standard)', desc: 'Aufgeräumt und hell im Outlook-Stil', preview: 'bg-white', previewBorder: 'border-ms-blue/50' },
+    { id: 'dark', name: 'Dunkel', desc: 'Ruhiges Dunkelgrau mit blauem Akzent — Mails bleiben auf Weiss', preview: 'bg-ms-700', previewBorder: 'border-ms-blue-light/50' },
+    { id: 'minimal', name: 'Minimal', desc: 'Minimalistisch in Schwarz/Weiss', preview: 'bg-gray-100', previewBorder: 'border-gray-400' },
     { id: 'morphism', name: 'Morphismus', desc: 'Glasmorphismus mit weichen Schatten', preview: 'bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900', previewBorder: 'border-purple-500/50' },
     { id: 'glass', name: 'Glas', desc: 'Transparente Glaseffekte', preview: 'bg-gradient-to-br from-blue-950 via-slate-900 to-indigo-950', previewBorder: 'border-sky-400/50' },
     { id: 'retro', name: 'Retro', desc: '80er/90er Neon-Stil', preview: 'bg-gray-950', previewBorder: 'border-pink-500/50' },
@@ -136,7 +134,7 @@ function SettingsV2() {
             <div className="w-2 h-2 rounded-full bg-pink-500" />
             <div className="w-2 h-2 rounded-full bg-yellow-400" />
             <div className="w-2 h-2 rounded-full bg-green-400" />
-            <div className="w-2 h-2 rounded-full bg-cyan-400" />
+            <div className="w-2 h-2 rounded-full bg-accentbg" />
             <div className="w-2 h-2 rounded-full bg-violet-500" />
           </div>
         );
@@ -160,7 +158,10 @@ function SettingsV2() {
           <div className="space-y-6">
             {/* Theme Selection */}
             <div className={`${c.card} ${c.border} border rounded-xl p-6`}>
-              <h3 className={`text-lg font-semibold ${c.text} mb-4 flex items-center gap-2`}><ColorPalette size={16} className="text-cyan-400" /> Design</h3>
+              <h3 className={`text-lg font-semibold ${c.text} mb-4 flex items-center gap-2`}><ColorPalette size={16} className={c.accent} /> Design</h3>
+              <p className={`text-sm ${c.textSecondary} mb-4`}>
+                Der Mailinhalt wird in jedem Design auf weissem Grund angezeigt — so bleibt jede E-Mail gut lesbar.
+              </p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {themeOptions.map(t => (
                   <button
@@ -168,7 +169,7 @@ function SettingsV2() {
                     onClick={() => changeTheme(t.id)}
                     className={`p-4 rounded-xl border-2 transition-all ${
                       theme === t.id 
-                        ? `border-cyan-500 ring-2 ring-cyan-500/20` 
+                        ? `border-ms-blue ring-2 ring-ms-blue/20` 
                         : `${c.border} hover:border-gray-400`
                     }`}
                   >
@@ -184,7 +185,7 @@ function SettingsV2() {
 
             {/* Info */}
             <div className={`${c.card} ${c.border} border rounded-xl p-6`}>
-              <h3 className={`text-lg font-semibold ${c.text} mb-4 flex items-center gap-2`}><Information size={16} className="text-cyan-400" /> Über CoreMail</h3>
+              <h3 className={`text-lg font-semibold ${c.text} mb-4 flex items-center gap-2`}><Information size={16} className={c.accent} /> Über CoreMail</h3>
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className={c.textSecondary}>Version</span>
@@ -192,23 +193,23 @@ function SettingsV2() {
                 </div>
                 <div className="flex justify-between">
                   <span className={c.textSecondary}>Electron</span>
-                  <span className={c.text}>28.x</span>
+                  <span className={c.text}>41.x</span>
                 </div>
                 <div className="flex justify-between">
                   <span className={c.textSecondary}>Node.js</span>
-                  <span className={c.text}>20.x</span>
+                  <span className={c.text}>24.x</span>
                 </div>
               </div>
             </div>
 
             {/* Hinweise */}
             <div className={`${c.card} ${c.border} border rounded-xl p-6`}>
-              <h3 className={`text-lg font-semibold ${c.text} mb-4 flex items-center gap-2`}><Information size={16} className="text-cyan-400" /> Hinweise</h3>
+              <h3 className={`text-lg font-semibold ${c.text} mb-4 flex items-center gap-2`}><Information size={16} className={c.accent} /> Hinweise</h3>
               <ul className={`space-y-2 text-sm ${c.textSecondary}`}>
                 <li>• E-Mail-Konten werden unter "Konten" verwaltet</li>
                 <li>• Passwörter werden verschlüsselt gespeichert</li>
                 <li>• Für Gmail: App-Passwörter erforderlich</li>
-                <li>• Tastaturkürzel: ↑↓ für E-Mail-Navigation</li>
+                <li>• Tastaturkürzel: ↑↓ für E-Mail-Navigation, «?» zeigt alle Kürzel</li>
               </ul>
             </div>
 
@@ -227,9 +228,6 @@ function SettingsV2() {
       case 'font':
         return <FontSettings />;
 
-      case 'sidebar':
-        return <SidebarSettings />;
-      
       case 'categories':
         return <CategorySettings />;
       
@@ -313,8 +311,8 @@ function SettingsV2() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
                   isActive
-                    ? `${c.accentBg} text-white`
-                    : `${c.hover} text-white opacity-60 hover:opacity-100`
+                    ? `${c.selected} ${c.accent} font-medium`
+                    : `${c.hover} ${c.text} opacity-70 hover:opacity-100`
                 }`}
               >
                 <Icon size={16} className="flex-shrink-0" />
@@ -334,8 +332,8 @@ function SettingsV2() {
             return (
               <div className={`flex items-center gap-3 mb-6`}>
                 {HeaderIcon && (
-                  <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/20 flex items-center justify-center flex-shrink-0">
-                    <HeaderIcon size={16} className="text-cyan-400" />
+                  <div className={`w-9 h-9 rounded-xl ${c.bgTertiary} ${c.border} border flex items-center justify-center flex-shrink-0`}>
+                    <HeaderIcon size={16} className={c.accent} />
                   </div>
                 )}
                 <h1 className={`text-2xl font-bold ${c.text}`}>{active?.name}</h1>

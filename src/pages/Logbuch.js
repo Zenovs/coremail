@@ -6,7 +6,7 @@ import {
 } from '@carbon/icons-react';
 
 const TYPE_CONFIG = {
-  app_start:       { label: 'App-Start',     Icon: Rocket,      color: 'text-cyan-400' },
+  app_start:       { label: 'App-Start',     Icon: Rocket,      color: 'text-accent' },
   email_received:  { label: 'Empfangen',     Icon: MailAll,     color: 'text-green-400' },
   email_sent:      { label: 'Gesendet',      Icon: Send,        color: 'text-blue-400' },
   settings:        { label: 'Einstellungen', Icon: Settings,    color: 'text-yellow-400' },

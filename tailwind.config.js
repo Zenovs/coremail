@@ -7,6 +7,35 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // v8.0: Akzentfarbe über CSS-Variablen (hell: #0f6cbd, dunkel: #479ef5)
+        accent: 'rgb(var(--cm-accent-rgb) / <alpha-value>)',
+        accentbg: 'rgb(var(--cm-accent-bg-rgb) / <alpha-value>)',
+        accentbghover: 'rgb(var(--cm-accent-bg-hover-rgb) / <alpha-value>)',
+        // v8.0: Neutrale Office-Palette (Hell/Dunkel) für das Outlook-artige Layout
+        ms: {
+          50: '#faf9f8',
+          100: '#f3f2f1',
+          150: '#edebe9',
+          200: '#e1dfdd',
+          300: '#d1d1d1',
+          400: '#a19f9d',
+          500: '#616161',
+          600: '#424242',
+          650: '#383838',
+          700: '#292929',
+          750: '#242424',
+          800: '#1f1f1f',
+          900: '#141414',
+          text: '#242424',
+          blue: '#0f6cbd',
+          'blue-dark': '#115ea3',
+          'blue-light': '#479ef5',
+          'blue-lighter': '#96c6fa',
+          tint: '#e3eefa',
+          'tint-dark': '#2c3d55',
+          red: '#c50f1f',
+          'red-light': '#f1707b'
+        },
         dark: {
           950: '#050505',
           900: '#0a0a0a',

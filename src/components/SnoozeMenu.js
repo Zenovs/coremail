@@ -156,7 +156,7 @@ function SnoozeMenu({ open, onClose, onPick, anchorRect = null }) {
             <button
               onClick={submitCustom}
               disabled={!customDate || !customTime}
-              className="flex-1 px-2 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-sm rounded-md"
+              className="flex-1 px-2 py-1.5 bg-accentbg hover:bg-accentbghover disabled:opacity-40 text-white text-sm rounded-md"
             >
               Erinnern
             </button>

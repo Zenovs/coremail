@@ -74,7 +74,7 @@ const METHOD_BADGE = {
   CANCEL:  { label: 'Absage',    className: 'bg-red-500/20 text-red-300 border-red-500/40' },
   REPLY:   { label: 'Antwort',   className: 'bg-purple-500/20 text-purple-300 border-purple-500/40' },
   COUNTER: { label: 'Gegenvorschlag', className: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
-  PUBLISH: { label: 'Termin',    className: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' }
+  PUBLISH: { label: 'Termin',    className: 'bg-accent/15 text-accent border-accent/30' }
 };
 
 export default function InvitationCard({ invitation, account, icsAttachment, onSaveIcs, onOpenIcs, icsState }) {

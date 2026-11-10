@@ -24,7 +24,7 @@ function LoadingSpinner({ message = 'Laden...', size = 'md', variant = 'default'
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="w-3 h-3 bg-cyan-400 rounded-full"
+              className="w-3 h-3 bg-accentbg rounded-full"
               style={{
                 animation: 'bounce 1.4s ease-in-out infinite',
                 animationDelay: `${i * 0.16}s`
@@ -40,7 +40,7 @@ function LoadingSpinner({ message = 'Laden...', size = 'md', variant = 'default'
   if (variant === 'pulse') {
     return (
       <div className="flex flex-col items-center justify-center p-8 animate-fadeIn">
-        <div className={`${sizes[size]} rounded-full bg-cyan-400/20 animate-ping mb-4`} />
+        <div className={`${sizes[size]} rounded-full bg-accent/15 animate-ping mb-4`} />
         {message && <p className={`${c.textSecondary} text-sm`}>{message}</p>}
       </div>
     );
@@ -50,10 +50,10 @@ function LoadingSpinner({ message = 'Laden...', size = 'md', variant = 'default'
   return (
     <div className="flex flex-col items-center justify-center p-8 animate-fadeIn">
       <div className={`relative ${sizes[size]} mb-4`}>
-        <div className={`absolute inset-0 ${borderSizes[size]} border-cyan-400/20 rounded-full`}></div>
-        <div className={`absolute inset-0 ${borderSizes[size]} border-cyan-400 border-t-transparent rounded-full animate-spin`}></div>
+        <div className={`absolute inset-0 ${borderSizes[size]} border-accent/30 rounded-full`}></div>
+        <div className={`absolute inset-0 ${borderSizes[size]} border-accent border-t-transparent rounded-full animate-spin`}></div>
         {/* Inner glow effect */}
-        <div className="absolute inset-2 bg-cyan-400/5 rounded-full blur-sm animate-pulse"></div>
+        <div className="absolute inset-2 bg-accent/10 rounded-full blur-sm animate-pulse"></div>
       </div>
       {message && <p className={`${c.textSecondary} text-sm`}>{message}</p>}
     </div>

@@ -163,7 +163,7 @@ function SenderManagement() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Absender suchen..."
-              className={`w-full pl-9 pr-4 py-2 ${c.bg} ${c.border} border rounded-lg ${c.text} text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+              className={`w-full pl-9 pr-4 py-2 ${c.bg} ${c.border} border rounded-lg ${c.text} text-sm focus:outline-none focus:ring-2 focus:ring-accent`}
             />
           </div>
         </div>

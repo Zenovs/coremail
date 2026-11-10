@@ -101,7 +101,7 @@ function FontSettings() {
               onClick={() => handleFontChange(font.id)}
               className={`p-4 rounded-xl border-2 text-left transition-all ${
                 selectedFont === font.id
-                  ? 'border-cyan-500 ring-2 ring-cyan-500/20'
+                  ? 'border-accent ring-2 ring-accent/30'
                   : `${c.border} hover:border-gray-500`
               }`}
             >
@@ -113,7 +113,7 @@ function FontSettings() {
                   {font.name}
                 </span>
                 {selectedFont === font.id && (
-                  <Checkmark size={20} className="text-cyan-500" />
+                  <Checkmark size={20} className="text-accent" />
                 )}
               </div>
               <p 
@@ -139,7 +139,7 @@ function FontSettings() {
             type="text"
             value={previewText}
             onChange={(e) => setPreviewText(e.target.value)}
-            className={`w-full px-3 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+            className={`w-full px-3 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent`}
             placeholder="Gib einen Text ein..."
           />
         </div>

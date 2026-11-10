@@ -1,30 +1,40 @@
 import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
 import {
   TrashCan, Email, EmailNew, Renew, MailAll, Send, Document,
-  WarningAlt, Archive, Folder, DragVertical, Security,
+  WarningAlt, Archive, Folder, Security,
   CheckboxChecked, Checkbox, CloseFilled, ChevronDown, ChevronRight,
   Bullhorn, Misuse, Debug, Tag, Close, Checkmark, CheckmarkFilled, Reply, ReplyAll, SendAlt,
-  Download, FolderOpen, Earth, InProgress, FolderAdd, Edit, WarningFilled, Time, Bot, Pin, Locked
+  Download, FolderOpen, Earth, InProgress, FolderAdd, Edit, WarningFilled, Time, Bot,
+  Add, Search, SidePanelClose, SidePanelOpen, Launch, Keyboard
 } from '@carbon/icons-react';
 import Attachment from '../components/PaperclipIcon';
-import { useTheme } from '../context/ThemeContext';
+import { useTheme, SheetTheme, SHEET_COLORS } from '../context/ThemeContext';
 import { useAccounts, useAccountStats } from '../context/AccountContext';
+import { useSearch } from '../context/SearchContext';
 import MailApi from '../services/MailApi';
-import LoadingSpinner from '../components/LoadingSpinner';
 import EmailHtmlFrame from '../components/EmailHtmlFrame';
 import SnoozeMenu from '../components/SnoozeMenu';
 import EmailTagInput from '../components/EmailTagInput';
 import InvitationCard from '../components/InvitationCard';
-import { usePanelMode, PANEL_TRANSITION } from '../utils/usePanelMode';
+import { getCategoryIcon } from './CategorySettings';
 
-// v6.6.2: Kollabierte Spaltenbreiten — schmal genug damit Icons noch klickbar sind
-const FOLDER_COLLAPSED_WIDTH    = 48;
-const EMAIL_LIST_COLLAPSED_WIDTH = 64;
+// ─── v8.0: Outlook-artiges Layout ────────────────────────────────────────────
+//
+//   ┌────┬──────────────┬──────────────────┬──────────────────────────────┐
+//   │Rail│ Kommandoleiste (Neue E-Mail · Löschen · Archiv · Antworten …) │
+//   │    ├──────────────┼──────────────────┼──────────────────────────────┤
+//   │    │ Konten +     │ Mail-Liste       │ Lese-Blatt (immer weiss)     │
+//   │    │ Ordner       │                  │                              │
+//   └────┴──────────────┴──────────────────┴──────────────────────────────┘
+//
+// Die Spalten stehen still (kein Hover-Auf-/Zuklappen mehr); nur die Ordner-
+// Spalte lässt sich bewusst auf Icons einklappen. Breiten sind per Drag
+// einstellbar und werden gespeichert.
 
-// Deterministische Farb-Palette für Avatar-Hintergründe (Initiale-Avatare im
-// kollabierten Mail-Listen-Modus). Hash auf Absender → stabile Farbe pro Person.
+// Deterministische Farb-Palette für Avatar-Hintergründe. Hash auf Absender →
+// stabile Farbe pro Person (wie die Initialen-Avatare in Outlook).
 const AVATAR_COLORS = [
-  'bg-cyan-600', 'bg-blue-600', 'bg-indigo-600', 'bg-violet-600',
+  'bg-accentbg', 'bg-blue-600', 'bg-indigo-600', 'bg-violet-600',
   'bg-purple-600', 'bg-pink-600', 'bg-rose-600', 'bg-orange-600',
   'bg-amber-600', 'bg-emerald-600', 'bg-teal-600', 'bg-sky-600'
 ];
@@ -38,109 +48,137 @@ function avatarFor(email) {
   return { initial, color: AVATAR_COLORS[h % AVATAR_COLORS.length] };
 }
 
-// Kleines Mode-Toggle-Icon (Auto / Pinned / Closed)
-const PanelModeToggle = ({ panel, c }) => {
-  const Icon = panel.isPinned ? Pin : (panel.isClosed ? Locked : Pin);
-  const colorClass = panel.isPinned ? c.accent : c.textSecondary;
-  return (
-    <button
-      onClick={panel.cycleMode}
-      title={panel.tooltip}
-      aria-label={panel.tooltip}
-      className={`p-1 rounded hover:bg-white/10 transition-colors ${colorClass}`}
-    >
-      <Icon size={14} className={panel.isAuto ? 'opacity-50' : ''} />
-    </button>
-  );
+// "Name <mail@x>" → "Name"; nur Adresse → Adresse. Outlook zeigt in der
+// Liste den Namen, die Adresse steht im Lese-Blatt darunter.
+const displayNameOf = (s) => {
+  const raw = String(s || '').trim();
+  if (!raw) return '';
+  const m = raw.match(/^"?([^"<]*)"?\s*<([^>]+)>/);
+  if (m) return (m[1] || '').trim() || m[2].trim();
+  return raw.replace(/^["']+|["']+$/g, '');
 };
+// Mehrere Empfänger ("a <x>, b <y>") → "a, b"
+const displayNamesOf = (s) => String(s || '')
+  .split(/,(?![^<]*>)/)
+  .map(displayNameOf)
+  .filter(Boolean)
+  .join(', ');
+const addressOf = (s) => {
+  const m = String(s || '').match(/<([^>]+)>/);
+  return (m ? m[1] : String(s || '')).trim();
+};
+
+// Button der Kommandoleiste: Icon + Beschriftung (ab 1024px Fensterbreite)
+const CmdButton = ({ Icon, label, onClick, disabled, active, danger, c, btnRef, title, showLabel = true }) => (
+  <button
+    ref={btnRef}
+    onClick={onClick}
+    disabled={disabled}
+    title={title || label}
+    aria-label={label}
+    aria-pressed={active ? true : undefined}
+    className={`cm-cmd ${
+      active
+        ? `${c.selected} ${c.accent}`
+        : danger
+          ? `${c.text} ${c.hover} hover:text-ms-red`
+          : `${c.text} ${c.hover}`
+    }`}
+  >
+    <Icon size={18} className={active ? '' : c.textSecondary} />
+    {showLabel && <span className="hidden xl:inline">{label}</span>}
+  </button>
+);
 import { getCurrentFont } from './FontSettings';
 import { analyzeEmails, getSpamFilterSettings, TAG_STYLES } from '../utils/SpamFilter';
 import SenderCategoryManager from '../services/SenderCategoryManager';
 
-// v2.4.0: Virtual Inbox Subfolders for automatic categorization
+// v2.4.0: Virtuelle Posteingangs-Unterordner (Spam-Filter-Kategorien).
+// v8.0: Badge-Farben über die cm-badge-Klassen (hell/dunkel automatisch).
 const INBOX_SUBFOLDERS = [
-  { id: 'werbung', name: 'Werbung', icon: Bullhorn, color: 'text-orange-400', bgColor: 'bg-orange-500/20' },
-  { id: 'spam', name: 'Spam', icon: Misuse, color: 'text-red-400', bgColor: 'bg-red-500/20' },
-  { id: 'schaedlich', name: 'Schädlich', icon: WarningAlt, color: 'text-yellow-400', bgColor: 'bg-yellow-500/20' },
-  { id: 'virus', name: 'Virus', icon: Debug, color: 'text-purple-400', bgColor: 'bg-purple-500/20' },
-  { id: 'whitelist', name: 'Vertrauenswürdig', icon: CheckmarkFilled, color: 'text-green-400', bgColor: 'bg-green-500/20' },
+  { id: 'werbung',    name: 'Werbung',          icon: Bullhorn,        badge: 'orange' },
+  { id: 'spam',       name: 'Spam',             icon: Misuse,          badge: 'red' },
+  { id: 'schaedlich', name: 'Schädlich',        icon: WarningAlt,      badge: 'yellow' },
+  { id: 'virus',      name: 'Virus',            icon: Debug,           badge: 'purple' },
+  { id: 'whitelist',  name: 'Vertrauenswürdig', icon: CheckmarkFilled, badge: 'green' },
 ];
 
-// v2.6.0: Category definitions for manual categorization
+// v2.6.0: Manuelle Absender-Einstufung
 const MANUAL_CATEGORIES = [
-  { id: 'whitelist', name: 'Vertrauenswürdig', Icon: CheckmarkFilled, color: '#10B981', bgClass: 'bg-green-500', hoverClass: 'hover:bg-green-600' },
-  { id: 'werbung', name: 'Werbung', Icon: Bullhorn, color: '#F59E0B', bgClass: 'bg-orange-500', hoverClass: 'hover:bg-orange-600' },
-  { id: 'spam', name: 'Spam', Icon: Misuse, color: '#EF4444', bgClass: 'bg-red-500', hoverClass: 'hover:bg-red-600' },
-  { id: 'schaedlich', name: 'Schädlich', Icon: WarningAlt, color: '#EAB308', bgClass: 'bg-yellow-500', hoverClass: 'hover:bg-yellow-600' },
-  { id: 'virus', name: 'Virus', Icon: Debug, color: '#7C3AED', bgClass: 'bg-purple-500', hoverClass: 'hover:bg-purple-600' },
+  { id: 'whitelist',  name: 'Vertrauenswürdig', Icon: CheckmarkFilled, badge: 'green' },
+  { id: 'werbung',    name: 'Werbung',          Icon: Bullhorn,        badge: 'orange' },
+  { id: 'spam',       name: 'Spam',             Icon: Misuse,          badge: 'red' },
+  { id: 'schaedlich', name: 'Schädlich',        Icon: WarningAlt,      badge: 'yellow' },
+  { id: 'virus',      name: 'Virus',            Icon: Debug,           badge: 'purple' },
 ];
 
-// v2.6.0: Category Buttons Component for manual email categorization
+// v2.6.0 / v8.0: Absender einstufen — zusammengeklappt ein einzelner Text-
+// Button im Lese-Blatt; die fünf Kategorie-Chips erscheinen erst auf Klick.
+// Vorher stand die komplette Button-Leiste dauerhaft über jeder Mail.
 const CategoryButtons = memo(({ email, currentCategory, onCategorize, c }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const senderEmail = SenderCategoryManager.extractEmail(email?.from);
+  const [open, setOpen] = useState(false);
   const senderCategory = SenderCategoryManager.getSenderCategory(email?.from);
-  
-  // Kompakte einzeilige Leiste — die grossen Rahmen-Buttons nahmen zusammen
-  // mit der Übersetzen-Zeile ~20% der Vorschau-Höhe ein, bevor Inhalt kam.
+  const active = currentCategory || senderCategory || null;
+  const activeDef = MANUAL_CATEGORIES.find(x => x.id === active);
+
+  useEffect(() => { setOpen(false); }, [email?.uid]);
+
   return (
-    <div className={`px-3 py-1.5 ${c.bgSecondary} ${c.border} border-t flex items-center gap-1.5 flex-wrap`}>
-      <Tag size={14} className={`${c.textSecondary} flex-shrink-0`} title="Absender kategorisieren" />
+    <div className="flex items-center gap-2 flex-wrap">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`inline-flex items-center gap-1.5 text-xs ${c.textSecondary} hover:underline`}
+        title="Absender einstufen (gilt für alle Mails dieses Absenders)"
+        aria-expanded={open}
+      >
+        <Tag size={14} />
+        {activeDef ? (
+          <>
+            <span>Absender:</span>
+            <span className={`cm-badge cm-badge-${activeDef.badge}`}><span>{activeDef.name}</span></span>
+          </>
+        ) : (
+          <span>Absender einstufen</span>
+        )}
+        <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
 
-      {MANUAL_CATEGORIES.map(cat => {
-        const isActive = currentCategory === cat.id || senderCategory === cat.id;
-        const CatIcon = cat.Icon;
-        return (
-          <button
-            key={cat.id}
-            onClick={() => onCategorize(email, cat.id)}
-            className={`px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 transition-all border ${
-              isActive
-                ? `${cat.bgClass} text-white border-transparent`
-                : `bg-transparent ${c.textSecondary} ${cat.hoverClass} hover:text-white`
-            }`}
-            style={{ borderColor: isActive ? 'transparent' : cat.color + '66' }}
-            title={`Absender als ${cat.name} markieren`}
-            aria-label={`Absender als ${cat.name} markieren`}
-          >
-            <CatIcon size={14} />
-            <span>{cat.name}</span>
-            {isActive && <Checkmark size={14} />}
-          </button>
-        );
-      })}
-
-      {/* Remove category button */}
-      {(currentCategory || senderCategory) && (
-        <button
-          onClick={() => onCategorize(email, null)}
-          className={`px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 transition-all border ${c.border} ${c.textSecondary} ${c.hover}`}
-          title="Kategorie entfernen"
-          aria-label="Kategorie entfernen"
-        >
-          <Close size={14} />
-          <span>Entfernen</span>
-        </button>
-      )}
-
-      {/* Sender info */}
-      {senderCategory && (
-        <div className={`text-xs ${c.textSecondary} ml-auto hidden lg:flex items-center gap-1`}>
-          <span>Absender gemerkt:</span>
-          <span className={`px-2 py-0.5 rounded-full ${
-            INBOX_SUBFOLDERS.find(f => f.id === senderCategory)?.bgColor || 'bg-gray-500/20'
-          } ${
-            INBOX_SUBFOLDERS.find(f => f.id === senderCategory)?.color || 'text-gray-400'
-          }`}>
-            {MANUAL_CATEGORIES.find(c => c.id === senderCategory)?.name || senderCategory}
-          </span>
-        </div>
+      {open && (
+        <>
+          {MANUAL_CATEGORIES.map(cat => {
+            const isActive = active === cat.id;
+            const CatIcon = cat.Icon;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => onCategorize(email, isActive ? null : cat.id)}
+                className={`cm-badge cm-badge-${cat.badge} ${isActive ? 'ring-1 ring-current' : 'opacity-75 hover:opacity-100'}`}
+                title={`Absender als ${cat.name} markieren`}
+                aria-pressed={isActive}
+              >
+                <CatIcon size={12} />
+                <span>{cat.name}</span>
+                {isActive && <Checkmark size={12} />}
+              </button>
+            );
+          })}
+          {active && (
+            <button
+              onClick={() => onCategorize(email, null)}
+              className={`text-xs ${c.textSecondary} hover:underline`}
+              title="Einstufung entfernen"
+            >
+              Entfernen
+            </button>
+          )}
+        </>
       )}
     </div>
   );
 });
 
-// Übersetzen-Button mit Dropdown + Ergebnisanzeige
+// Übersetzen: kleiner Text-Button im Lese-Blatt; Ergebnis erscheint als Block
+// darunter (basis-full in der Werkzeugzeile).
 const TranslateBar = memo(({ email, c }) => {
   const [enabledLanguages, setEnabledLanguages] = useState([]);
   const [open, setOpen] = useState(false);
@@ -194,57 +232,53 @@ const TranslateBar = memo(({ email, c }) => {
 
   return (
     <>
-      <div className={`px-3 py-1.5 ${c.bgSecondary} ${c.border} border-t flex items-center gap-2 flex-wrap`}>
-        <div className="relative" ref={dropdownRef}>
-          <button
-            onClick={() => setOpen(o => !o)}
-            disabled={loading}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors ${c.bgTertiary} ${c.border} border ${c.textSecondary} ${c.hover} disabled:opacity-50`}
-            title="Mail übersetzen"
-          >
-            {loading ? <Renew size={14} className="animate-spin" /> : <Earth size={14} />}
-            <span>{loading ? 'Übersetze...' : result ? `Übersetzt → ${result.lang}` : 'Übersetzen'}</span>
-            <ChevronDown size={14} className="opacity-60" />
-          </button>
+      <div className="relative" ref={dropdownRef}>
+        <button
+          onClick={() => setOpen(o => !o)}
+          disabled={loading}
+          className={`inline-flex items-center gap-1.5 text-xs ${c.textSecondary} hover:underline disabled:opacity-50`}
+          title="Mail übersetzen"
+          aria-expanded={open}
+        >
+          {loading ? <Renew size={14} className="animate-spin" /> : <Earth size={14} />}
+          <span>{loading ? 'Übersetze…' : result ? `Übersetzt → ${result.lang}` : 'Übersetzen'}</span>
+          <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
 
-          {open && (
-            <div className={`absolute top-full left-0 mt-1 z-50 min-w-[160px] rounded-xl shadow-xl ${c.bg} ${c.border} border py-1`}>
-              {enabledLanguages.map(code => (
-                <button
-                  key={code}
-                  onClick={() => translate(code)}
-                  className={`w-full text-left px-3 py-2 text-sm ${c.text} ${c.hover} flex items-center justify-between gap-4`}
-                >
-                  <span>{LANG_NAMES[code] || code}</span>
-                  <span className={`text-xs ${c.textSecondary}`}>{code}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {result && (
-          <button
-            onClick={() => setResult(null)}
-            className={`ml-auto text-xs ${c.textSecondary} ${c.hover} px-2 py-1 rounded flex items-center gap-1`}
-          >
-            <Close size={14} /> Übersetzung schließen
-          </button>
+        {open && (
+          <div className={`absolute top-full left-0 mt-1 z-50 min-w-[170px] rounded-lg shadow-xl ${c.popover} ${c.border} border py-1`}>
+            {enabledLanguages.map(code => (
+              <button
+                key={code}
+                onClick={() => translate(code)}
+                className={`w-full text-left px-3 py-1.5 text-sm ${c.text} ${c.hover} flex items-center justify-between gap-4`}
+              >
+                <span>{LANG_NAMES[code] || code}</span>
+                <span className={`text-xs ${c.textSecondary}`}>{code}</span>
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
       {/* Übersetzungs-Ergebnis */}
       {(result || error) && (
-        <div className={`mx-4 mt-4 rounded-xl border ${c.border} overflow-hidden`}>
-          <div className={`px-4 py-2 ${c.bgSecondary} flex items-center gap-2 border-b ${c.border}`}>
-            <Earth size={16} className={c.accent} />
-            <span className={`text-sm font-medium ${c.text}`}>
+        <div className={`basis-full mt-2 rounded-lg border ${c.border} overflow-hidden`}>
+          <div className={`px-3 py-1.5 ${c.bgSecondary} flex items-center gap-2 border-b ${c.border}`}>
+            <Earth size={14} className={c.accent} />
+            <span className={`text-xs font-medium ${c.text}`}>
               {result ? `Übersetzung → ${LANG_NAMES[result.lang] || result.lang}` : 'Übersetzungsfehler'}
             </span>
+            <button
+              onClick={() => { setResult(null); setError(null); }}
+              className={`ml-auto text-xs ${c.textSecondary} hover:underline inline-flex items-center gap-1`}
+            >
+              <Close size={12} /> Schliessen
+            </button>
           </div>
-          <div className="p-4">
+          <div className="p-3">
             {error
-              ? <p className="text-sm text-red-400">{error}</p>
+              ? <p className="text-sm text-ms-red">{error}</p>
               : <p className={`text-sm ${c.text} whitespace-pre-wrap leading-relaxed`}>{result.text}</p>
             }
           </div>
@@ -270,20 +304,17 @@ const GOOGLE_FONTS = {
   'jetbrains': 'JetBrains Mono'
 };
 
-// Folder column width constants (v1.8.1)
-const FOLDER_MIN_WIDTH = 150;
-const FOLDER_MAX_WIDTH = 350;
-const FOLDER_DEFAULT_WIDTH = 192;
+// Spaltenbreiten (v8.0: neue Standardwerte für das Outlook-Layout)
+const FOLDER_MIN_WIDTH = 190;
+const FOLDER_MAX_WIDTH = 420;
+const FOLDER_DEFAULT_WIDTH = 250;
+const FOLDER_COLLAPSED_WIDTH = 48;
 
-// v1.12.2: Email list column width constants (resizable)
-const EMAIL_LIST_MIN_WIDTH = 100;
-const EMAIL_LIST_MAX_WIDTH = 600;
-const EMAIL_LIST_DEFAULT_WIDTH = 350;
+const EMAIL_LIST_MIN_WIDTH = 280;
+const EMAIL_LIST_MAX_WIDTH = 640;
+const EMAIL_LIST_DEFAULT_WIDTH = 380;
 
-// v1.12.0: Preview column width constants (reduced min from 200 to 100)
-const PREVIEW_MIN_WIDTH = 100;
-const PREVIEW_MAX_WIDTH = 800;
-const PREVIEW_DEFAULT_WIDTH = 450;
+const PREVIEW_MIN_WIDTH = 360;
 
 // Email cache for performance (v1.8.0)
 const emailCache = new Map();
@@ -404,163 +435,139 @@ const removeEmailFromIndexedDB = async (accountId, folder, uid) => {
   }
 };
 
-// v1.14.0: Spam Tag Badge component
+// v1.14.0 / v8.0: Spam-Kategorie als kleines Badge (hell/dunkel automatisch)
+const SPAM_BADGE_COLOR = { werbung: 'orange', spam: 'red', schaedlich: 'yellow', virus: 'purple', whitelist: 'green', sicher: 'green' };
 const SpamTagBadge = memo(({ category }) => {
   if (!category || category === 'sicher') return null;
   const style = TAG_STYLES[category];
   if (!style) return null;
-  
   return (
-    <span 
-      className={`inline-flex items-center px-1.5 py-0.5 text-xs rounded-full font-medium border ${style.bgColor} ${style.textColor} ${style.borderColor}`}
-      title={style.description}
-    >
-      {style.label}
+    <span className={`cm-badge cm-badge-${SPAM_BADGE_COLOR[category] || 'gray'}`} title={style.description}>
+      <span>{style.label}</span>
     </span>
   );
 });
 
-// v2.3.0: Improved Email List Item with multi-select checkbox
-// v1.14.0: Added spam filter tags
-// v6.6.0: Triage-Badge mit Farb-Codierung der AI-Kategorisierung
-const TRIAGE_STYLE = {
-  urgent:        { bg: 'bg-red-500/15',    text: 'text-red-300',    label: 'Dringend' },
-  important:     { bg: 'bg-amber-500/15',  text: 'text-amber-300',  label: 'Wichtig' },
-  informational: { bg: 'bg-cyan-500/15',   text: 'text-cyan-300',   label: 'Info' },
-  newsletter:    { bg: 'bg-slate-500/15',  text: 'text-slate-300',  label: 'Newsletter' },
-  automated:     { bg: 'bg-gray-500/15',   text: 'text-gray-300',   label: 'Auto' }
+// v6.6.0: Triage-Badge der AI-Kategorisierung
+const TRIAGE_BADGE = {
+  urgent:        ['red',   'Dringend'],
+  important:     ['amber', 'Wichtig'],
+  informational: ['blue',  'Info'],
+  newsletter:    ['gray',  'Newsletter'],
+  automated:     ['gray',  'Auto']
 };
 const TriageBadge = memo(({ triage }) => {
   if (!triage?.category) return null;
-  const s = TRIAGE_STYLE[triage.category];
+  const s = TRIAGE_BADGE[triage.category];
   if (!s) return null;
   return (
     <span
-      className={`px-1.5 py-0.5 ${s.bg} ${s.text} text-xs rounded-full font-medium`}
+      className={`cm-badge cm-badge-${s[0]}`}
       title={triage.reasoning ? `${triage.reasoning} (${Math.round((triage.confidence || 0) * 100)}%)` : ''}
     >
-      {s.label}
+      <span>{s[1]}</span>
     </span>
   );
 });
 
+// Mail-Zeile wie in Outlook: Avatar · Absender + Zeit · Betreff (+ Büroklammer)
+// · Vorschau + Badges. Ungelesen = fetter Absender, blauer Betreff und blauer
+// Balken am linken Rand. Ausgewählt = hinterlegte Zeile.
 const EmailListItem = memo(({ email, index, isSelected, isChecked, onSelect, onCheckboxChange, onDelete, onArchive, onToggleRead, c, actionLoading, spamAnalysis, showCheckboxes, isSentFolder, onDragStart, triage }) => {
   const isUnread = !email.seen;
   const spamCategory = spamAnalysis?.category;
-  const spamTags = spamAnalysis?.tags || [];
-  const displayAddress = isSentFolder ? (email.to || email.from) : email.from;
-  
-  // v1.14.0: Border color based on spam category
-  const getBorderColor = () => {
-    if (spamCategory === 'virus') return 'border-l-red-600';
-    if (spamCategory === 'schaedlich') return 'border-l-yellow-500';
-    if (spamCategory === 'spam') return 'border-l-red-400';
-    if (spamCategory === 'werbung') return 'border-l-orange-400';
-    if (spamCategory === 'whitelist') return 'border-l-green-500';
-    if (isUnread) return 'border-l-blue-500';
-    return 'border-l-transparent';
-  };
-  
-  // v2.3.0: Handle checkbox click
+  const showSpam = spamCategory && spamCategory !== 'sicher' && spamCategory !== 'whitelist';
+  const who = isSentFolder
+    ? displayNamesOf(email.to || email.from)
+    : (email.fromName || displayNameOf(email.from));
+  const av = avatarFor(email);
+  const accShort = email.__accName
+    ? (email.__accName.length > 16 ? email.__accName.slice(0, 15) + '…' : email.__accName)
+    : null;
+
   const handleCheckboxClick = (e) => {
     e.stopPropagation();
     onCheckboxChange(email.uid, e.shiftKey);
   };
-  
+
   return (
     <div
       onClick={() => onSelect(index)}
       draggable
       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.(email); }}
-      className={`cm-list-item p-3 cursor-pointer ${c.border} border-b relative group select-none
-        ${isSelected
-          ? `${c.bgTertiary} shadow-[inset_3px_0_0_0] shadow-cyan-500`
-          : isChecked
-          ? 'bg-cyan-500/10 shadow-[inset_3px_0_0_0] shadow-cyan-400'
-          : isUnread
-          ? `bg-blue-500/5 hover:bg-blue-500/10 shadow-[inset_3px_0_0_0] shadow-blue-500`
-          : `${c.hover} shadow-[inset_3px_0_0_0] shadow-transparent hover:shadow-white/10`}
-        ${!isSelected ? getBorderColor() : ''}
-      `}
+      className={`cm-list-item relative group select-none cursor-pointer pl-3 pr-3 py-2.5 border-b ${c.border} ${
+        isUnread ? 'cm-unread-bar' : ''
+      } ${isSelected || isChecked ? c.selected : c.hover}`}
+      aria-selected={isSelected}
     >
-      {/* Outlook-Layout: Absender + Datum in Zeile 1, Betreff in Zeile 2,
-          Vorschau + Badges in Zeile 3. Ungelesen = fetter Absender, farbiger
-          Betreff, blauer Seitenbalken — kein "Neu"-Badge mehr. */}
-      <div className="flex items-start gap-2">
-        {/* v2.3.0: Checkbox for multi-select */}
-        {showCheckboxes && (
-          <div
-            className="flex-shrink-0 mt-0.5"
+      <div className="flex items-start gap-3">
+        {showCheckboxes ? (
+          <button
             onClick={handleCheckboxClick}
+            className="mt-1.5 flex-shrink-0"
+            aria-label={isChecked ? 'Auswahl aufheben' : 'Auswählen'}
           >
-            {isChecked ? (
-              <CheckboxChecked size={20} className={`${c.accent} cursor-pointer`} />
-            ) : (
-              <Checkbox size={20} className={`${c.textSecondary} hover:${c.accent} cursor-pointer`} />
-            )}
-          </div>
+            {isChecked
+              ? <CheckboxChecked size={18} className={c.accent} />
+              : <Checkbox size={18} className={c.textSecondary} />}
+          </button>
+        ) : (
+          <span
+            className={`mt-0.5 w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs font-semibold ${av.color}`}
+            aria-hidden="true"
+          >
+            {av.initial}
+          </span>
         )}
 
-        <div className="flex-1 min-w-0 overflow-hidden">
-          {/* Zeile 1: Absender + Anhang-Indikator + Datum rechts */}
+        <div className="flex-1 min-w-0">
+          {/* Zeile 1: Absender + Zeit */}
           <div className="flex items-baseline justify-between gap-2">
-            <span className={`text-sm truncate ${isUnread ? `font-semibold ${c.text}` : `font-medium ${c.text}`}`}>
-              {isSentFolder && <span className={`text-xs ${c.textSecondary}`}>An: </span>}
-              {displayAddress}
+            <span className={`text-sm truncate ${isUnread ? 'font-semibold' : ''} ${c.text}`} title={isSentFolder ? (email.to || '') : (email.from || '')}>
+              {isSentFolder && <span className={`font-normal ${c.textSecondary}`}>An: </span>}
+              {who || '(Unbekannt)'}
             </span>
-            <span className="flex items-center gap-1.5 flex-shrink-0">
-              {/* v6.14.0: Anhänge deutlich kennzeichnen — wurden vorher in
-                  der Liste gar nicht angezeigt und darum leicht übersehen */}
-              {(email.hasAttachments || email.hasAttachment) && (
-                <Attachment size={14} className="text-amber-400 flex-shrink-0" aria-label="Enthält Anhang" />
-              )}
-              <span
-                className={`text-xs group-hover:invisible ${isUnread ? 'text-blue-400 font-medium' : c.textSecondary}`}
-                title={new Date(email.date).toLocaleString('de-DE')}
-              >
-                {formatListDate(email.date)}
-              </span>
+            <span
+              className={`text-xs flex-shrink-0 group-hover:invisible ${isUnread ? `font-semibold ${c.unread}` : c.textSecondary}`}
+              title={new Date(email.date).toLocaleString('de-DE')}
+            >
+              {formatListDate(email.date)}
             </span>
           </div>
 
-          {/* Zeile 2: Betreff (+ Konto-Badge im Alle-Konten-Modus) */}
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className={`text-sm truncate flex-1 min-w-0 ${isUnread ? `${c.accent} font-medium` : c.textSecondary}`}>
-              {email.subject}
+          {/* Zeile 2: Betreff + Anhang */}
+          <div className="flex items-center gap-2">
+            <span className={`text-[13px] truncate flex-1 min-w-0 ${isUnread ? `font-semibold ${c.unread}` : c.text}`}>
+              {email.subject || '(Kein Betreff)'}
             </span>
-            {email.__accName && (
-              <span
-                className="px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 text-white/90"
-                style={{ backgroundColor: `hsl(${[...email.__accName].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7)} 45% 38%)` }}
-                title={email.__accName}
-              >
-                {email.__accName.length > 14 ? email.__accName.slice(0, 13) + '…' : email.__accName}
-              </span>
+            {(email.hasAttachments || email.hasAttachment) && (
+              <Attachment size={14} className={`${c.textSecondary} flex-shrink-0`} aria-label="Enthält Anhang" />
             )}
           </div>
 
-          {/* Zeile 3: Vorschau + Badges (nur wenn vorhanden) */}
-          {(email.preview || (spamCategory && spamCategory !== 'sicher' && spamCategory !== 'whitelist') || triage) && (
+          {/* Zeile 3: Vorschau + Badges */}
+          {(email.preview || showSpam || triage || accShort) && (
             <div className="flex items-center gap-2 mt-0.5">
               <span className={`text-xs ${c.textSecondary} truncate flex-1 min-w-0`}>
                 {email.preview}
               </span>
-              {spamCategory && spamCategory !== 'sicher' && spamCategory !== 'whitelist' && (
-                <SpamTagBadge category={spamCategory} />
+              {accShort && (
+                <span className="cm-badge cm-badge-gray" title={email.__accName}><span>{accShort}</span></span>
               )}
+              {showSpam && <SpamTagBadge category={spamCategory} />}
               <TriageBadge triage={triage} />
             </div>
           )}
         </div>
       </div>
 
-      {/* Quick Actions als Overlay oben rechts (verdeckt beim Hovern das Datum,
-          statt in jeder Zeile dauerhaft Platz zu reservieren) */}
-      <div className={`absolute right-2 top-2 hidden group-hover:flex items-center gap-1 ${c.bgSecondary} rounded-md shadow px-0.5`}>
+      {/* Schnellaktionen beim Hovern (verdecken die Zeit, statt dauerhaft
+          Platz zu reservieren) */}
+      <div className={`absolute right-2 top-1.5 hidden group-hover:flex items-center gap-0.5 ${c.popover} border ${c.border} rounded-md shadow-sm px-0.5`}>
         <button
           onClick={(e) => { e.stopPropagation(); onToggleRead(email.uid, email.seen); }}
-          className={`p-1.5 ${c.hover} rounded transition-colors ${c.textSecondary} hover:${c.text}`}
-          title={email.seen ? 'Als ungelesen markieren' : 'Als gelesen markieren'}
+          className={`p-1.5 ${c.hover} rounded ${c.textSecondary}`}
+          title={email.seen ? 'Als ungelesen markieren (U)' : 'Als gelesen markieren (U)'}
           aria-label={email.seen ? 'Als ungelesen markieren' : 'Als gelesen markieren'}
         >
           {actionLoading === `read-${email.uid}` ? (
@@ -571,10 +578,9 @@ const EmailListItem = memo(({ email, index, isSelected, isChecked, onSelect, onC
             <Email size={16} />
           )}
         </button>
-        {/* v6.10.0: Archivieren direkt aus der Zeile (Kürzel: E) */}
         <button
           onClick={(e) => { e.stopPropagation(); onArchive(email.uid); }}
-          className={`p-1.5 ${c.hover} rounded transition-colors ${c.textSecondary} hover:${c.text}`}
+          className={`p-1.5 ${c.hover} rounded ${c.textSecondary}`}
           title="Archivieren (E)"
           aria-label="Archivieren"
         >
@@ -586,8 +592,8 @@ const EmailListItem = memo(({ email, index, isSelected, isChecked, onSelect, onC
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(email.uid); }}
-          className={`p-1.5 ${c.hover} rounded transition-colors text-red-400 hover:text-red-300 hover:bg-red-900/20`}
-          title="Löschen"
+          className={`p-1.5 ${c.hover} rounded ${c.textSecondary} hover:text-ms-red`}
+          title="Löschen (Entf)"
           aria-label="Löschen"
         >
           {actionLoading === `delete-${email.uid}` ? (
@@ -658,7 +664,12 @@ const getFolderIcon = (type) => {
 
 function InboxSplitView({ onFullView, onNavigate, onForward }) {
   const { currentTheme } = useTheme();
-  const { activeAccountId, getActiveAccount, accounts, updateAccountStats } = useAccounts();
+  const {
+    activeAccountId, setActiveAccountId, getActiveAccount, accounts, updateAccountStats,
+    categories, getAccountsByCategory
+  } = useAccounts();
+  const accountStats = useAccountStats();
+  const { openSearch } = useSearch();
   // v7.0: Vereinheitlichter Posteingang — '__ALL__' ist ein virtueller Modus,
   // der die INBOX aller Konten zusammenführt. Mails tragen dann __accId/__accName
   // und eine zusammengesetzte uid (`kontoId::uid`), weil IMAP-UIDs zwischen
@@ -747,7 +758,7 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
   
   // v2.4.0: Inbox Subfolder Filter State
   const [categoryFilter, setCategoryFilter] = useState(null); // null = alle, 'werbung', 'spam', 'schaedlich', 'virus'
-  const [inboxExpanded, setInboxExpanded] = useState(true);
+  const [inboxExpanded, setInboxExpanded] = useState(false); // v8.0: Unterordner standardmässig zu
   const [collapsedFolders, setCollapsedFolders] = useState(new Set());
   const toggleFolderCollapsed = (path) => {
     setCollapsedFolders(prev => {
@@ -801,9 +812,6 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
   const [triageRunning, setTriageRunning] = useState(false);
   const [triageProgress, setTriageProgress] = useState(null); // {processed, total} | null
 
-  // v6.6.2: Hover-Expand für Folder- und Mail-Listen-Spalten
-  const folderPanel   = usePanelMode('panel.folderColumn',   'auto');
-  const mailListPanel = usePanelMode('panel.mailListColumn', 'auto');
 
   // v6.6.0: Snooze — Set von "accountId|folder|uid", die aktuell gesnoozt sind.
   // Filtert betroffene Mails aus dem Inbox-View. Wird per IPC bei Mount,
@@ -813,30 +821,52 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
   const [snoozeAnchorRect, setSnoozeAnchorRect] = useState(null);
   const snoozeBtnRef = useRef(null);
   
+  // v8.0: Ordner-Spalte bewusst einklappbar (Icons) — kein Hover-Auf-/Zuklappen mehr
+  const [folderPaneCollapsed, setFolderPaneCollapsed] = useState(() => {
+    try { return localStorage.getItem('inbox.folderPaneCollapsed') === '1'; } catch { return false; }
+  });
+  const toggleFolderPane = useCallback(() => {
+    setFolderPaneCollapsed(v => {
+      try { localStorage.setItem('inbox.folderPaneCollapsed', v ? '0' : '1'); } catch {}
+      return !v;
+    });
+  }, []);
+  // Konten-Gruppen (Kategorien) in der Ordner-Spalte ein-/ausklappen
+  const [collapsedCats, setCollapsedCats] = useState(() => new Set());
+  const toggleCat = (id) => setCollapsedCats(prev => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+  // Spam-Filter aktiv? Nur dann die virtuellen Unterordner unter dem Posteingang anbieten
+  const spamFilterEnabled = useMemo(() => {
+    try { return !!getSpamFilterSettings().enabled; } catch { return true; }
+  }, []);
+  const folderPaneRef = useRef(null);
+  const listPaneRef = useRef(null);
+
   // Resizable folder column (v1.8.1)
   const [folderWidth, setFolderWidth] = useState(() => {
-    const saved = localStorage.getItem('inbox.folderColumnWidth');
-    return saved ? parseInt(saved, 10) : FOLDER_DEFAULT_WIDTH;
+    const saved = parseInt(localStorage.getItem('inbox.folderColumnWidth'), 10);
+    return Number.isFinite(saved)
+      ? Math.min(FOLDER_MAX_WIDTH, Math.max(FOLDER_MIN_WIDTH, saved))
+      : FOLDER_DEFAULT_WIDTH;
   });
   const [isResizingFolder, setIsResizingFolder] = useState(false);
-  
+
   // v1.12.2: Resizable email list column
   const [emailListWidth, setEmailListWidth] = useState(() => {
-    const saved = localStorage.getItem('inbox.emailListColumnWidth');
-    return saved ? parseInt(saved, 10) : EMAIL_LIST_DEFAULT_WIDTH;
+    const saved = parseInt(localStorage.getItem('inbox.emailListColumnWidth'), 10);
+    return Number.isFinite(saved)
+      ? Math.min(EMAIL_LIST_MAX_WIDTH, Math.max(EMAIL_LIST_MIN_WIDTH, saved))
+      : EMAIL_LIST_DEFAULT_WIDTH;
   });
   const [isResizingEmailList, setIsResizingEmailList] = useState(false);
-  
-  // v1.11.0: Resizable preview column
-  const [previewWidth, setPreviewWidth] = useState(() => {
-    const saved = localStorage.getItem('inbox.previewColumnWidth');
-    return saved ? parseInt(saved, 10) : PREVIEW_DEFAULT_WIDTH;
-  });
-  const [isResizingPreview, setIsResizingPreview] = useState(false);
-  
-  // Handle column resize — rAF-throttled to avoid 60 setState/sec
+
+  // Handle column resize — rAF-throttled. Breite = Mausposition minus linker
+  // Rand der jeweiligen Spalte (unabhängig von Rail- und Nachbarbreiten).
   useEffect(() => {
-    if (!isResizingFolder && !isResizingEmailList && !isResizingPreview) return;
+    if (!isResizingFolder && !isResizingEmailList) return;
 
     let frameId = null;
     let lastClientX = 0;
@@ -847,22 +877,20 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
       frameId = requestAnimationFrame(() => {
         frameId = null;
         if (isResizingFolder) {
-          setFolderWidth(Math.max(FOLDER_MIN_WIDTH, Math.min(FOLDER_MAX_WIDTH, lastClientX - 60)));
+          const left = folderPaneRef.current?.getBoundingClientRect().left ?? 0;
+          setFolderWidth(Math.max(FOLDER_MIN_WIDTH, Math.min(FOLDER_MAX_WIDTH, lastClientX - left)));
         }
         if (isResizingEmailList) {
-          setEmailListWidth(Math.max(EMAIL_LIST_MIN_WIDTH, Math.min(EMAIL_LIST_MAX_WIDTH, lastClientX - 60 - folderWidth)));
-        }
-        if (isResizingPreview) {
-          setPreviewWidth(Math.max(PREVIEW_MIN_WIDTH, Math.min(PREVIEW_MAX_WIDTH, window.innerWidth - lastClientX)));
+          const left = listPaneRef.current?.getBoundingClientRect().left ?? 0;
+          setEmailListWidth(Math.max(EMAIL_LIST_MIN_WIDTH, Math.min(EMAIL_LIST_MAX_WIDTH, lastClientX - left)));
         }
       });
     };
 
     const handleMouseUp = () => {
       if (frameId) { cancelAnimationFrame(frameId); frameId = null; }
-      if (isResizingFolder) { setIsResizingFolder(false); localStorage.setItem('inbox.folderColumnWidth', folderWidth.toString()); }
-      if (isResizingEmailList) { setIsResizingEmailList(false); localStorage.setItem('inbox.emailListColumnWidth', emailListWidth.toString()); }
-      if (isResizingPreview) { setIsResizingPreview(false); localStorage.setItem('inbox.previewColumnWidth', previewWidth.toString()); }
+      if (isResizingFolder) { setIsResizingFolder(false); localStorage.setItem('inbox.folderColumnWidth', String(folderWidth)); }
+      if (isResizingEmailList) { setIsResizingEmailList(false); localStorage.setItem('inbox.emailListColumnWidth', String(emailListWidth)); }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -877,7 +905,8 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [isResizingFolder, isResizingEmailList, isResizingPreview, folderWidth, emailListWidth, previewWidth]);
+  }, [isResizingFolder, isResizingEmailList, folderWidth, emailListWidth]);
+
 
   // Generate cache key
   const getCacheKey = useCallback((accountId, folder) => `${accountId}:${folder}`, []);
@@ -2410,6 +2439,12 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
           setShowShortcutHelp(v => !v);
           return;
         }
+        // v8.0: N → Neue E-Mail (wie Outlook/Gmail)
+        if ((e.key === 'n' || e.key === 'N') && onNavigate) {
+          e.preventDefault();
+          onNavigate('compose');
+          return;
+        }
         // R / A / F: Antworten / Allen antworten / Weiterleiten
         if (selectedEmail) {
           if (e.key === 'r' || e.key === 'R') {
@@ -2467,7 +2502,7 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIndex, filteredEmails, selectedEmail, onFullView, currentFolder, handleDelete, handleSelectAll, handleClearSelection, selectedUids, showDeleteConfirm, folderModal, confirmDeleteUid, confirmDiscardReply, isTrashFolder, handleBulkDelete, requestDelete, handleArchive, handleSelectEmail, handleToggleRead, onForward, replyMode, showShortcutHelp, snoozeMenuOpen]);
+  }, [selectedIndex, filteredEmails, selectedEmail, onFullView, currentFolder, handleDelete, handleSelectAll, handleClearSelection, selectedUids, showDeleteConfirm, folderModal, confirmDeleteUid, confirmDiscardReply, isTrashFolder, handleBulkDelete, requestDelete, handleArchive, handleSelectEmail, handleToggleRead, onForward, onNavigate, replyMode, showShortcutHelp, snoozeMenuOpen]);
 
   // Trigger loadMore when user scrolls near the bottom of the email list
   const handleEmailListScroll = useCallback((e) => {
@@ -2647,12 +2682,140 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
     }
   }, [activeAccountId, currentFolder, emails, updateAccountStats]);
 
+  // ── v8.0: Ableitungen für Kommandoleiste, Ordner-Spalte und Listenkopf ─────
+  const s = SHEET_COLORS; // Lese-Blatt ist in jedem Theme hell
+  const totalUnread = Object.entries(accountStats || {})
+    .filter(([id]) => id !== '__ALL__')
+    .reduce((n, [, st]) => n + (st?.unread || 0), 0);
+  const currentFolderName = (() => {
+    if (allMode) return currentFolder === 'SENT_ALL' ? 'Gesendet (alle Konten)' : 'Posteingang (alle Konten)';
+    const all = (folders || []).flatMap(f => [f, ...(f.children || [])]);
+    const f = all.find(x => x.path === currentFolder);
+    if (f) return f.name;
+    return currentFolder === 'INBOX' ? 'Posteingang' : String(currentFolder).split(/[./]/).pop();
+  })();
+  const showAccountSection = accounts.length > 1;
+  const accountGroups = (() => {
+    const groups = categories
+      .map(cat => ({ cat, accounts: getAccountsByCategory(cat.id) }))
+      .filter(g => g.accounts.length > 0);
+    const known = new Set(categories.map(cat => cat.id));
+    const rest = accounts.filter(a => !known.has(a.categoryId));
+    if (rest.length > 0) groups.push({ cat: { id: '__rest__', name: 'Weitere', color: '#8a8886', icon: 'tag' }, accounts: rest });
+    return groups;
+  })();
+  const activeCategoryDef = categoryFilter ? INBOX_SUBFOLDERS.find(f => f.id === categoryFilter) : null;
+  const selectedSpam = selectedEmail ? spamResults.get(selectedEmail.uid || emails[selectedIndex]?.uid) : null;
+  const selectedSpamColor = selectedSpam && selectedSpam.category !== 'sicher' ? (SPAM_BADGE_COLOR[selectedSpam.category] || 'gray') : null;
+  const sheetDate = (d) => {
+    const dt = new Date(d);
+    if (isNaN(dt)) return '';
+    return dt.toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+  const openSnooze = () => {
+    const rect = snoozeBtnRef.current?.getBoundingClientRect() || null;
+    setSnoozeAnchorRect(rect);
+    setSnoozeMenuOpen(v => !v);
+  };
+  const closeReply = () => {
+    // v6.8.1: Halb geschriebene Antwort nicht stillschweigend verwerfen
+    if (replyEditorRef.current?.innerText?.trim()) {
+      setConfirmDiscardReply(true);
+    } else {
+      setReplyMode(null);
+      setReplyError(null);
+      if (replyEditorRef.current) replyEditorRef.current.innerHTML = '';
+    }
+  };
+
+  // Ordner-Zeile (offen und eingeklappt) — eine Funktion statt doppeltem JSX
+  const renderFolderRow = (folder) => {
+    const isActive = currentFolder === folder.path && !categoryFilter;
+    const isDragOver = dragOverFolder === folder.path;
+    const inboxUnread = folder.path === 'INBOX' ? unreadCount : (folder.unread || 0);
+    const canCollapse = folder.path === 'INBOX'
+      ? (spamFilterEnabled && !allMode)
+      : (folder.children?.length > 0);
+    const isOpen = folder.path === 'INBOX' ? inboxExpanded : !collapsedFolders.has(folder.path);
+    const toggle = (e) => {
+      e.stopPropagation();
+      if (folder.path === 'INBOX') setInboxExpanded(v => !v);
+      else toggleFolderCollapsed(folder.path);
+    };
+    if (folderPaneCollapsed) {
+      return (
+        <button
+          onClick={() => { setCurrentFolder(folder.path); if (folder.path === 'INBOX') setCategoryFilter(null); }}
+          onDragOver={(e) => { e.preventDefault(); setDragOverFolder(folder.path); }}
+          onDragLeave={() => setDragOverFolder(null)}
+          onDrop={() => handleDropOnFolder(folder.path)}
+          title={folder.name}
+          aria-label={folder.name}
+          className={`relative w-9 h-9 mx-auto my-0.5 rounded-md flex items-center justify-center ${
+            isActive ? `${c.selected} ${c.accent}` : isDragOver ? 'bg-ms-blue/20' : `${c.textSecondary} ${c.paneHover}`
+          }`}
+        >
+          {['inbox','sent','sentitems','drafts','trash','deleteditems','spam','junkemail','archive'].includes(folder.type)
+            ? getFolderIcon(folder.type)
+            : <span className="text-[11px] font-bold uppercase">{(folder.name || '?').charAt(0)}</span>}
+          {inboxUnread > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-ms-blue text-white text-[10px] font-semibold flex items-center justify-center leading-none">
+              {inboxUnread > 99 ? '99' : inboxUnread}
+            </span>
+          )}
+        </button>
+      );
+    }
+    return (
+      <button
+        onClick={() => { setCurrentFolder(folder.path); if (folder.path === 'INBOX') setCategoryFilter(null); }}
+        onDragOver={(e) => { e.preventDefault(); setDragOverFolder(folder.path); }}
+        onDragLeave={() => setDragOverFolder(null)}
+        onDrop={() => handleDropOnFolder(folder.path)}
+        className={`w-full text-left h-8 pr-2 flex items-center gap-1.5 text-sm rounded-md transition-colors ${
+          isActive
+            ? `${c.selected} ${c.text} font-semibold`
+            : isDragOver
+              ? 'bg-ms-blue/20'
+              : `${c.text} ${c.paneHover}`
+        }`}
+        style={{ paddingLeft: `${(folder.depth || 0) * 14 + 6}px` }}
+        aria-current={isActive ? 'true' : undefined}
+      >
+        {canCollapse ? (
+          <span
+            role="button"
+            tabIndex={-1}
+            onClick={toggle}
+            className={`w-5 h-5 flex items-center justify-center rounded ${c.textSecondary} hover:bg-black/5`}
+            aria-label={isOpen ? 'Einklappen' : 'Ausklappen'}
+          >
+            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </span>
+        ) : (
+          <span className="w-5 shrink-0" />
+        )}
+        <span className={`${isActive ? c.accent : c.textSecondary} flex-shrink-0`}>{getFolderIcon(folder.type)}</span>
+        <span className="truncate flex-1">{folder.name}</span>
+        {inboxUnread > 0 && (
+          <span className={`text-xs font-semibold ${c.accent} tabular-nums`}>{inboxUnread > 999 ? '999+' : inboxUnread}</span>
+        )}
+      </button>
+    );
+  };
+
   if (!activeAccountId) {
     return (
-      <div className={`flex-1 flex items-center justify-center ${c.bgSecondary}`}>
-        <div className={`text-center ${c.textSecondary}`}>
-          <Email size={48} className="mx-auto mb-4 opacity-60" />
-          <p>Wähle ein Konto aus der Sidebar</p>
+      <div className={`flex-1 flex items-center justify-center ${c.bg}`}>
+        <div className={`text-center ${c.textSecondary} max-w-sm px-6`}>
+          <Email size={44} className="mx-auto mb-4 opacity-40" />
+          <p className={`text-base font-semibold ${c.text} mb-1`}>Noch kein Konto eingerichtet</p>
+          <p className="text-sm mb-5">Füge ein IMAP- oder Microsoft-365-Konto hinzu, um deine E-Mails hier zu sehen.</p>
+          {onNavigate && (
+            <button onClick={() => onNavigate('accounts')} className={`px-4 py-2 ${c.accentBg} ${c.accentHover} text-white rounded-md text-sm font-medium`}>
+              Konto hinzufügen
+            </button>
+          )}
         </div>
       </div>
     );
@@ -2660,36 +2823,41 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
 
   if (loading) {
     return (
-      <div className={`flex-1 flex overflow-hidden ${c.bg}`}>
-        {/* Folder skeleton */}
-        <div className={`${c.bgSecondary} ${c.border} border-r flex flex-col`} style={{ width: '200px' }}>
-          <div className={`p-3 ${c.border} border-b`}><div className="cm-skeleton h-4 w-16" /></div>
-          <div className="p-3 space-y-2">
-            {[100,80,90,70,85].map((w,i) => <div key={i} className="cm-skeleton h-7 rounded-xl" style={{ width: `${w}%`, animationDelay: `${i*80}ms` }} />)}
-          </div>
+      <div className={`flex-1 flex flex-col overflow-hidden ${c.bg}`}>
+        <div className={`h-12 flex-shrink-0 flex items-center gap-2 px-3 ${c.bgSecondary} ${c.border} border-b`}>
+          <div className="cm-skeleton h-8 w-32" />
+          <div className="cm-skeleton h-8 w-24 ml-3" />
+          <div className="cm-skeleton h-8 w-28" />
         </div>
-        {/* Email list skeleton */}
-        <div className={`${c.bgSecondary} ${c.border} border-r flex flex-col`} style={{ width: '320px' }}>
-          <div className={`p-4 ${c.border} border-b`}><div className="cm-skeleton h-5 w-32" /></div>
-          <div className="flex-1 overflow-hidden">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className={`p-3 ${c.border} border-b`} style={{ animationDelay: `${i*60}ms` }}>
-                <div className="flex gap-2 mb-2">
-                  <div className="cm-skeleton h-3.5 rounded-full w-2.5" />
-                  <div className="cm-skeleton h-3.5 flex-1" style={{ animationDelay: `${i*60+20}ms` }} />
-                  <div className="cm-skeleton h-3 w-10" style={{ animationDelay: `${i*60+40}ms` }} />
+        <div className="flex-1 flex overflow-hidden">
+          <div className={`${c.pane} ${c.border} border-r flex flex-col`} style={{ width: folderPaneCollapsed ? FOLDER_COLLAPSED_WIDTH : folderWidth }}>
+            <div className="p-3 space-y-2">
+              {[100,80,90,70,85,60].map((w,i) => <div key={i} className="cm-skeleton h-7" style={{ width: `${w}%`, animationDelay: `${i*80}ms` }} />)}
+            </div>
+          </div>
+          <div className={`${c.list} ${c.border} border-r flex flex-col`} style={{ width: emailListWidth }}>
+            <div className={`p-3 ${c.border} border-b`}><div className="cm-skeleton h-5 w-32" /></div>
+            <div className="flex-1 overflow-hidden">
+              {Array.from({ length: 9 }).map((_, i) => (
+                <div key={i} className={`px-3 py-2.5 ${c.border} border-b flex gap-3`} style={{ animationDelay: `${i*60}ms` }}>
+                  <div className="cm-skeleton h-8 w-8 rounded-full flex-shrink-0" />
+                  <div className="flex-1">
+                    <div className="flex gap-2 mb-1.5">
+                      <div className="cm-skeleton h-3.5 flex-1" style={{ animationDelay: `${i*60+20}ms` }} />
+                      <div className="cm-skeleton h-3 w-10" style={{ animationDelay: `${i*60+40}ms` }} />
+                    </div>
+                    <div className="cm-skeleton h-3 w-4/5 mb-1.5" style={{ animationDelay: `${i*60+30}ms` }} />
+                    <div className="cm-skeleton h-3 w-2/3" style={{ animationDelay: `${i*60+50}ms` }} />
+                  </div>
                 </div>
-                <div className="cm-skeleton h-3 w-4/5 ml-4 mb-1.5" style={{ animationDelay: `${i*60+30}ms` }} />
-                <div className="cm-skeleton h-3 w-2/3 ml-4" style={{ animationDelay: `${i*60+50}ms` }} />
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-        {/* Preview skeleton */}
-        <div className={`flex-1 ${c.bg} p-6`}>
-          <div className="cm-skeleton h-6 w-2/3 mb-4" />
-          <div className="cm-skeleton h-4 w-1/3 mb-6" />
-          {[95,88,72,80,60].map((w,i) => <div key={i} className="cm-skeleton h-3 mb-2" style={{ width: `${w}%`, animationDelay: `${i*60}ms` }} />)}
+          <div className="flex-1 cm-sheet p-6">
+            <div className="cm-skeleton h-6 w-2/3 mb-4" />
+            <div className="cm-skeleton h-4 w-1/3 mb-6" />
+            {[95,88,72,80,60].map((w,i) => <div key={i} className="cm-skeleton h-3 mb-2" style={{ width: `${w}%`, animationDelay: `${i*60}ms` }} />)}
+          </div>
         </div>
       </div>
     );
@@ -2699,17 +2867,17 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
     const activeAccount = getActiveAccount();
     const isMsAccount = activeAccount?.type === 'microsoft';
     return (
-      <div className={`flex-1 flex items-center justify-center ${c.bgSecondary}`}>
+      <div className={`flex-1 flex items-center justify-center ${c.bg}`}>
         <div className="text-center max-w-lg px-4">
-          <WarningFilled size={48} className="text-red-400 mx-auto mb-4" />
+          <WarningFilled size={44} className="text-ms-red mx-auto mb-4" />
           <h3 className={`font-semibold ${c.text} mb-2`}>Verbindung fehlgeschlagen</h3>
           {!isMsAccount && activeAccount?.imap?.host && (
             <p className={`text-xs ${c.textSecondary} mb-2`}>
               {activeAccount.imap.host}:{activeAccount.imap.port} ({activeAccount.imap.username})
             </p>
           )}
-          <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-3 mb-3 text-left">
-            <p className="text-red-400 text-sm font-mono break-all">{error}</p>
+          <div className="cm-banner cm-banner-red mb-3 text-left">
+            <p className="text-sm font-mono break-all">{error}</p>
           </div>
           <p className={`text-xs ${c.textSecondary} mb-4`}>
             {isMsAccount
@@ -2717,16 +2885,16 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
               : 'Überprüfe Host, Port, Benutzername und Passwort. Bei Gmail/Outlook wird ein App-Passwort benötigt.'}
           </p>
           <div className="flex flex-wrap gap-2 justify-center">
-            <button onClick={() => fetchEmails(false)} className={`px-4 py-2 ${c.accentBg} text-white rounded-lg text-sm`}>
+            <button onClick={() => fetchEmails(false)} className={`px-4 py-2 ${c.accentBg} ${c.accentHover} text-white rounded-md text-sm font-medium`}>
               Erneut versuchen
             </button>
             {onNavigate && (
-              <button onClick={() => onNavigate('accounts')} className={`px-4 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg text-sm`}>
+              <button onClick={() => onNavigate('accounts')} className={`px-4 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-md text-sm`}>
                 Konto-Einstellungen
               </button>
             )}
             {window.electronAPI?.openDevTools && (
-              <button onClick={() => window.electronAPI.openDevTools()} className={`px-4 py-2 ${c.bgTertiary} ${c.textSecondary} ${c.border} border rounded-lg text-sm`}>
+              <button onClick={() => window.electronAPI.openDevTools()} className={`px-4 py-2 ${c.bgTertiary} ${c.textSecondary} ${c.border} border rounded-md text-sm`}>
                 DevTools
               </button>
             )}
@@ -2745,26 +2913,29 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
         onPick={handleSnoozePick}
         anchorRect={snoozeAnchorRect}
       />
+
       {/* IndexedDB quota warning */}
       {showQuotaWarning && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-yellow-500/20 border-b border-yellow-500/40 text-yellow-300 text-sm flex-shrink-0">
+        <div className="cm-banner cm-banner-amber rounded-none border-x-0 border-t-0 flex-shrink-0">
           <WarningAlt size={16} className="flex-shrink-0" />
           <span>Offline-Speicher voll. Ältere E-Mails werden nicht mehr zwischengespeichert.</span>
-          <button onClick={() => setShowQuotaWarning(false)} className="ml-auto opacity-60 hover:opacity-100"><Close size={16} /></button>
+          <button onClick={() => setShowQuotaWarning(false)} className="ml-auto opacity-60 hover:opacity-100" aria-label="Schliessen"><Close size={16} /></button>
         </div>
       )}
+
       {/* v7.0: Tastaturkürzel-Hilfe (?-Taste) */}
       {showShortcutHelp && (
-        <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center" onClick={() => setShowShortcutHelp(false)}>
-          <div className={`${c.popover || c.card} ${c.border} border rounded-xl p-6 max-w-lg w-full mx-4 shadow-2xl`} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center" onClick={() => setShowShortcutHelp(false)}>
+          <div className={`${c.popover} ${c.border} border rounded-xl p-6 max-w-lg w-full mx-4 shadow-2xl`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className={`text-lg font-semibold ${c.text}`}>Tastaturkürzel</h3>
-              <button onClick={() => setShowShortcutHelp(false)} className={`p-1 rounded ${c.hover} ${c.textSecondary}`}><Close size={16} /></button>
+              <button onClick={() => setShowShortcutHelp(false)} className={`p-1 rounded ${c.hover} ${c.textSecondary}`} aria-label="Schliessen"><Close size={16} /></button>
             </div>
             <div className={`grid grid-cols-[auto_1fr] gap-x-5 gap-y-1.5 text-sm ${c.text}`}>
               {[
                 ['↑ / ↓  oder  J / K', 'Mail-Navigation'],
                 ['Enter', 'Vollansicht öffnen'],
+                ['N', 'Neue E-Mail'],
                 ['E', 'Archivieren'],
                 ['Entf', 'In den Papierkorb'],
                 ['R', 'Antworten'],
@@ -2778,7 +2949,7 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
                 ['?', 'Diese Hilfe'],
               ].map(([key, desc]) => (
                 <React.Fragment key={key}>
-                  <kbd className={`px-2 py-0.5 rounded ${c.bgTertiary} ${c.border} border text-xs font-mono justify-self-start`}>{key}</kbd>
+                  <kbd className="cm-kbd justify-self-start font-mono">{key}</kbd>
                   <span className={c.textSecondary}>{desc}</span>
                 </React.Fragment>
               ))}
@@ -2786,1111 +2957,983 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
           </div>
         </div>
       )}
-      {/* v6.9.6: Aktions-Toast — ersetzt den Vollbild-Fehler bei Snooze/Löschen/Markieren/Triage.
-          v6.11.0: String = Fehler; Objekt { text, undo?, error? } für Info-Toasts mit Rückgängig. */}
+
+      {/* v6.9.6: Aktions-Toast. v6.11.0: String = Fehler; Objekt { text, undo?, error? } für Info-Toasts mit Rückgängig. */}
       {actionToast && (() => {
         const t = typeof actionToast === 'string' ? { text: actionToast, error: true } : actionToast;
         return (
-          <div className={`fixed bottom-4 right-4 z-[60] flex items-center gap-3 px-4 py-3 border text-sm rounded-xl shadow-2xl max-w-sm ${
-            t.error ? 'bg-red-900/95 border-red-500/40 text-red-100' : 'bg-gray-900/95 border-white/20 text-gray-100'
+          <div className={`fixed bottom-4 right-4 z-[60] flex items-center gap-3 px-4 py-3 border text-sm rounded-lg shadow-2xl max-w-sm ${
+            t.error ? 'cm-banner-red' : `${c.popover} ${c.border} ${c.text}`
           }`}>
-            {t.error ? <WarningAlt size={16} className="flex-shrink-0" /> : <Checkmark size={16} className="flex-shrink-0 text-green-400" />}
+            {t.error ? <WarningAlt size={16} className="flex-shrink-0" /> : <Checkmark size={16} className="flex-shrink-0 text-green-500" />}
             <span className="break-words">{t.text}</span>
             {t.undo && (
               <button
                 onClick={() => { const u = t.undo; setActionToast(null); u(); }}
-                className="ml-1 px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-cyan-300 font-medium flex-shrink-0"
+                className={`ml-1 px-2 py-1 rounded-md ${c.bgTertiary} ${c.accent} font-medium flex-shrink-0`}
               >
                 Rückgängig
               </button>
             )}
-            <button onClick={() => setActionToast(null)} className="ml-auto opacity-60 hover:opacity-100 flex-shrink-0"><Close size={16} /></button>
+            <button onClick={() => setActionToast(null)} className="ml-auto opacity-60 hover:opacity-100 flex-shrink-0" aria-label="Schliessen"><Close size={16} /></button>
           </div>
         );
       })()}
-    <div className={`flex-1 flex overflow-hidden min-h-0 ${c.bg}`}>
-      {/* Folder List - Resizable (v1.8.1) + v6.6.2 Hover-Expand */}
-      <div
-        {...folderPanel.hoverProps}
-        className={`${c.bgSecondary} ${c.border} border-r flex flex-col overflow-hidden min-h-0 relative`}
-        style={{
-          width: folderPanel.isExpanded ? `${folderWidth}px` : `${FOLDER_COLLAPSED_WIDTH}px`,
-          minWidth: folderPanel.isExpanded ? `${FOLDER_MIN_WIDTH}px` : `${FOLDER_COLLAPSED_WIDTH}px`,
-          maxWidth: folderPanel.isExpanded ? `${FOLDER_MAX_WIDTH}px` : `${FOLDER_COLLAPSED_WIDTH}px`,
-          alignSelf: 'stretch',
-          transition: isResizingFolder ? 'none' : PANEL_TRANSITION
-        }}
-      >
-        <div className={`p-3 ${c.border} border-b flex items-center ${folderPanel.isExpanded ? 'justify-between' : 'justify-center'}`}>
-          {folderPanel.isExpanded && <h3 className={`font-medium ${c.text} text-sm`}>Ordner</h3>}
-          <div className="flex items-center gap-1">
-            {folderPanel.isExpanded && (
-              <>
-                <button
-                  onClick={openCreateFolder}
-                  title="Neuer Ordner"
-                  className={`p-1 rounded hover:bg-white/10 transition-colors ${c.textSecondary} hover:text-cyan-400`}
-                >
-                  <FolderAdd size={16} />
-                </button>
-                <button
-                  onClick={() => { folderCache.delete(`folders:${activeAccountId}`); loadFolders(true); }}
-                  title="Ordner synchronisieren"
-                  className={`p-1 rounded hover:bg-white/10 transition-colors ${c.textSecondary}`}
-                >
-                  <Renew size={16} className={loadingFolders ? 'animate-spin' : ''} />
-                </button>
-              </>
-            )}
-            <PanelModeToggle panel={folderPanel} c={c} />
-          </div>
-        </div>
-        {folderError && (
-          <div className="px-3 py-2 text-xs text-red-400 bg-red-900/20 border-b border-red-500/20 flex items-center gap-2">
-            <WarningAlt size={16} className="flex-shrink-0" /> {folderError}
-          </div>
-        )}
-        <div className="flex-1 overflow-y-auto py-2">
-          {flatFolders.map(folder => (
-            <div
-              key={folder.path}
-              onMouseEnter={() => setHoveredFolder(folder.path)}
-              onMouseLeave={() => setHoveredFolder(null)}
-              className="relative group/folder"
-            >
-              <button
-                onClick={() => {
-                  setCurrentFolder(folder.path);
-                  if (folder.path === 'INBOX') {
-                    setCategoryFilter(null);
-                  }
-                }}
-                onDragOver={(e) => { e.preventDefault(); setDragOverFolder(folder.path); }}
-                onDragLeave={() => setDragOverFolder(null)}
-                onDrop={() => handleDropOnFolder(folder.path)}
-                title={folderPanel.isExpanded ? '' : folder.name}
-                className={`w-full text-left ${folderPanel.isExpanded ? 'px-3' : 'px-2 justify-center'} py-2 flex items-center gap-2 text-sm transition-colors ${
-                  currentFolder === folder.path && !categoryFilter
-                    ? `${c.accentBg} text-white`
-                    : dragOverFolder === folder.path
-                    ? 'bg-cyan-500/30 scale-[1.02]'
-                    : `${c.textSecondary} ${c.hover}`
-                }`}
-                style={folderPanel.isExpanded ? { paddingLeft: `${(folder.depth * 12) + 12}px` } : undefined}
-              >
-                {/* Expand/Collapse arrow for INBOX virtual subfolders — nur im offenen Modus */}
-                {folderPanel.isExpanded && (folder.path === 'INBOX' ? (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setInboxExpanded(!inboxExpanded);
-                    }}
-                    className="p-0.5 -ml-1 hover:bg-white/10 rounded"
-                  >
-                    {inboxExpanded ? (
-                      <ChevronDown size={16} />
-                    ) : (
-                      <ChevronRight size={16} />
-                    )}
-                  </button>
-                ) : folder.children?.length > 0 ? (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); toggleFolderCollapsed(folder.path); }}
-                    className="p-0.5 -ml-1 hover:bg-white/10 rounded"
-                  >
-                    {collapsedFolders.has(folder.path) ? (
-                      <ChevronRight size={16} />
-                    ) : (
-                      <ChevronDown size={16} />
-                    )}
-                  </button>
-                ) : (
-                  <span className="w-4 shrink-0" />
-                ))}
-                {!folderPanel.isExpanded && !['inbox','sent','sentitems','drafts','trash','deleteditems','spam','junkemail','archive'].includes(folder.type) ? (
-                  // Eingeklappt: Anfangsbuchstabe statt 20 identischer Ordner-Icons —
-                  // sonst ist der Streifen ohne Hovern nicht unterscheidbar.
-                  <span className="w-4 h-4 flex items-center justify-center text-[11px] font-bold uppercase rounded-sm bg-white/10">
-                    {(folder.name || '?').charAt(0)}
-                  </span>
-                ) : (
-                  getFolderIcon(folder.type)
-                )}
-                {folderPanel.isExpanded && <span className="truncate flex-1">{folder.name}</span>}
-                {/* Unread count badge — auch im kollabierten Modus zeigen, wenn > 0 */}
-                {folder.path === 'INBOX' && unreadCount > 0 && (
-                  <span className={`${folderPanel.isExpanded ? 'px-1.5 py-0.5' : 'absolute -top-0.5 -right-0.5 w-4 h-4 flex items-center justify-center'} bg-blue-500 text-white text-[10px] rounded-full font-medium min-w-[16px] text-center`}>
-                    {unreadCount > 99 ? '99' : unreadCount}
-                  </span>
-                )}
-                {folder.unread > 0 && folder.path !== 'INBOX' && folderPanel.isExpanded && (
-                  <span className="px-1.5 py-0.5 bg-blue-500/80 text-white text-xs rounded-full font-medium min-w-[20px] text-center">
-                    {folder.unread}
-                  </span>
-                )}
-              </button>
-              {/* Edit / Delete buttons — only for custom (non-system) folders */}
-              {hoveredFolder === folder.path && !SYSTEM_FOLDERS.has(folder.path) && (
-                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 z-10">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); openRenameFolder(folder); }}
-                    title="Umbenennen"
-                    className="p-1 rounded hover:bg-white/15 text-gray-400 hover:text-cyan-400 transition-colors"
-                  >
-                    <Edit size={16} />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); openDeleteFolder(folder); }}
-                    title="Löschen"
-                    className="p-1 rounded hover:bg-white/15 text-gray-400 hover:text-red-400 transition-colors"
-                  >
-                    <TrashCan size={16} />
-                  </button>
-                </div>
-              )}
-              
-              {/* v2.4.0: Virtual Inbox Subfolders */}
-              {folder.path === 'INBOX' && inboxExpanded && (
-                <div className="ml-3">
-                  {INBOX_SUBFOLDERS.map(subfolder => {
-                    const SubIcon = subfolder.icon;
-                    const count = categoryCounts[subfolder.id] || 0;
-                    const isActive = currentFolder === 'INBOX' && categoryFilter === subfolder.id;
-                    
-                    return (
-                      <button
-                        key={subfolder.id}
-                        onClick={() => {
-                          setCurrentFolder('INBOX');
-                          setCategoryFilter(subfolder.id);
-                        }}
-                        className={`w-full text-left px-3 py-1.5 flex items-center gap-2 text-sm transition-colors rounded-lg my-0.5 ${
-                          isActive
-                            ? `${subfolder.bgColor} ${subfolder.color}`
-                            : `${c.textSecondary} ${c.hover}`
-                        }`}
-                        style={{ paddingLeft: '24px' }}
-                      >
-                        <SubIcon className={`w-4 h-4 ${isActive ? subfolder.color : ''}`} />
-                        <span className="truncate flex-1">{subfolder.name}</span>
-                        {count > 0 && (
-                          <span className={`px-1.5 py-0.5 ${subfolder.bgColor} ${subfolder.color} text-xs rounded-full font-medium min-w-[20px] text-center`}>
-                            {count}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
-          
-          {flatFolders.length === 0 && !loadingFolders && (
-            <div className={`px-3 py-2 text-sm ${c.textSecondary}`}>
-              <button
-                onClick={() => setCurrentFolder('INBOX')}
-                className={`w-full text-left flex items-center gap-2 py-2 ${
-                  currentFolder === 'INBOX' ? c.accent : ''
-                }`}
-              >
-                <MailAll size={16} />
-                Posteingang
-                {unreadCount > 0 && (
-                  <span className="ml-auto px-1.5 py-0.5 bg-blue-500 text-white text-xs rounded-full">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-            </div>
-          )}
-        </div>
-        
-        {/* Resize Handle */}
-        <div
-          onMouseDown={() => setIsResizingFolder(true)}
-          className={`absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-cyan-500/50 transition-colors ${isResizingFolder ? 'bg-cyan-500' : ''}`}
-          title="Ziehen zum Ändern der Breite"
+
+      {/* ── Kommandoleiste (wie das vereinfachte Menüband in Outlook) ── */}
+      <div className={`h-12 flex-shrink-0 flex items-center gap-0.5 px-2 overflow-hidden ${c.bgSecondary} ${c.border} border-b`} role="toolbar" aria-label="Aktionen">
+        <button
+          onClick={toggleFolderPane}
+          title={folderPaneCollapsed ? 'Ordner-Spalte ausklappen' : 'Ordner-Spalte einklappen'}
+          aria-label={folderPaneCollapsed ? 'Ordner-Spalte ausklappen' : 'Ordner-Spalte einklappen'}
+          className={`cm-cmd w-9 !px-0 justify-center ${c.textSecondary} ${c.hover}`}
+        >
+          {folderPaneCollapsed ? <SidePanelOpen size={18} /> : <SidePanelClose size={18} />}
+        </button>
+        <button
+          onClick={() => onNavigate && onNavigate('compose')}
+          className={`cm-cmd ml-1 ${c.accentBg} ${c.accentHover} text-white shadow-sm`}
+          title="Neue E-Mail (N)"
+        >
+          <Add size={18} />
+          <span>Neue E-Mail</span>
+        </button>
+        <div className={`w-px h-6 mx-2 ${c.border} border-l`} />
+        <CmdButton c={c} Icon={TrashCan} label="Löschen" title="Löschen (Entf)" danger disabled={!selectedEmail} onClick={() => requestDelete(selectedEmail.uid)} />
+        <CmdButton c={c} Icon={Archive} label="Archivieren" title="Archivieren (E)" disabled={!selectedEmail} onClick={() => handleArchive(selectedEmail.uid)} />
+        <div className={`w-px h-6 mx-2 ${c.border} border-l`} />
+        <CmdButton c={c} Icon={Reply} label="Antworten" title="Antworten (R)" disabled={!selectedEmail} active={replyMode === 'reply'} onClick={() => setReplyMode(replyMode === 'reply' ? null : 'reply')} />
+        <CmdButton c={c} Icon={ReplyAll} label="Allen antworten" title="Allen antworten (A)" disabled={!selectedEmail} active={replyMode === 'replyAll'} onClick={() => setReplyMode(replyMode === 'replyAll' ? null : 'replyAll')} />
+        <CmdButton c={c} Icon={SendAlt} label="Weiterleiten" title="Weiterleiten (F)" disabled={!selectedEmail || !onForward} onClick={() => onForward(selectedEmail)} />
+        <div className={`w-px h-6 mx-2 ${c.border} border-l`} />
+        <CmdButton c={c} btnRef={snoozeBtnRef} Icon={Time} label="Erinnern" disabled={!selectedEmail} active={snoozeMenuOpen} onClick={openSnooze} />
+        <CmdButton
+          c={c}
+          Icon={selectedEmail?.seen === false ? Email : EmailNew}
+          label={selectedEmail?.seen === false ? 'Als gelesen' : 'Als ungelesen'}
+          title="Gelesen/Ungelesen (U)"
+          disabled={!selectedEmail}
+          onClick={() => handleToggleRead(selectedEmail.uid, selectedEmail.seen)}
         />
+        <div className="flex-1" />
+        <button
+          onClick={openSearch}
+          className={`h-8 flex items-center gap-2 px-3 rounded-md border ${c.border} ${c.list} ${c.textSecondary} text-sm ${c.hover} w-9 justify-center lg:justify-start lg:w-52 xl:w-64 flex-shrink min-w-0`}
+          title="Suchen (⌘/Ctrl + K)"
+          aria-label="E-Mails durchsuchen"
+        >
+          <Search size={16} className="flex-shrink-0" />
+          <span className="hidden lg:inline flex-1 text-left truncate">E-Mails durchsuchen</span>
+          <kbd className="cm-kbd hidden xl:inline">⌘K</kbd>
+        </button>
+        <button
+          onClick={() => setShowShortcutHelp(true)}
+          title="Tastaturkürzel (?)"
+          aria-label="Tastaturkürzel anzeigen"
+          className={`cm-cmd w-9 !px-0 justify-center ml-1 ${c.textSecondary} ${c.hover}`}
+        >
+          <Keyboard size={18} />
+        </button>
+      </div>
 
-        {/* ── Folder Modal (create / rename / delete) ── */}
-        {folderModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setFolderModal(null)}>
-            <div
-              className={`w-80 rounded-2xl p-6 ${c.card} border ${c.border} shadow-2xl`}
-              onClick={e => e.stopPropagation()}
-            >
-              {folderModal.mode === 'create' && (
-                <>
-                  <h3 className={`text-base font-semibold ${c.text} mb-4 flex items-center gap-2`}>
-                    <FolderAdd size={20} className="text-cyan-400" /> Neuer Ordner
-                  </h3>
-                  <input
-                    autoFocus
-                    type="text"
-                    value={folderModalInput}
-                    onChange={e => setFolderModalInput(e.target.value)}
-                    onKeyDown={handleFolderModalKey}
-                    placeholder="Ordnername…"
-                    className={`w-full px-3 py-2 rounded-lg text-sm ${c.input} border ${c.border} focus:outline-none focus:ring-1 focus:ring-cyan-500/50 mb-3`}
-                  />
-                </>
-              )}
-              {folderModal.mode === 'rename' && (
-                <>
-                  <h3 className={`text-base font-semibold ${c.text} mb-4 flex items-center gap-2`}>
-                    <Edit size={20} className="text-cyan-400" /> Ordner umbenennen
-                  </h3>
-                  <input
-                    autoFocus
-                    type="text"
-                    value={folderModalInput}
-                    onChange={e => setFolderModalInput(e.target.value)}
-                    onKeyDown={handleFolderModalKey}
-                    placeholder="Neuer Name…"
-                    className={`w-full px-3 py-2 rounded-lg text-sm ${c.input} border ${c.border} focus:outline-none focus:ring-1 focus:ring-cyan-500/50 mb-3`}
-                  />
-                </>
-              )}
-              {folderModal.mode === 'delete' && (
-                <>
-                  <h3 className={`text-base font-semibold ${c.text} mb-2 flex items-center gap-2`}>
-                    <TrashCan size={20} className="text-red-400" /> Ordner löschen
-                  </h3>
-                  <p className={`text-sm ${c.textSecondary} mb-4`}>
-                    Ordner <strong className={c.text}>"{folderModal.folder.name}"</strong> dauerhaft löschen?
-                    Alle enthaltenen E-Mails werden ebenfalls gelöscht.
-                  </p>
-                </>
-              )}
-              {folderModalError && (
-                <p className="text-xs text-red-400 mb-3 flex items-center gap-1">
-                  <WarningAlt size={16} className="flex-shrink-0" /> {folderModalError}
-                </p>
-              )}
-              <div className="flex gap-2 justify-end">
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* ── Ordner-Spalte: Konten + Ordner (v8.0 zusammengeführt) ── */}
+        <div
+          ref={folderPaneRef}
+          className={`${c.pane} ${c.border} border-r flex flex-col overflow-hidden min-h-0 relative flex-shrink-0`}
+          style={{ width: folderPaneCollapsed ? FOLDER_COLLAPSED_WIDTH : folderWidth }}
+        >
+          {folderError && !folderPaneCollapsed && (
+            <div className="cm-banner cm-banner-red rounded-none border-x-0 border-t-0 text-xs">
+              <WarningAlt size={16} className="flex-shrink-0" /> {folderError}
+            </div>
+          )}
+
+          <div className={`flex-1 overflow-y-auto overflow-x-hidden ${folderPaneCollapsed ? 'py-2 px-1' : 'py-2 px-2'}`}>
+            {/* Konten */}
+            {showAccountSection && !folderPaneCollapsed && (
+              <div className="mb-3">
+                <div className={`px-2 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide ${c.textSecondary}`}>Konten</div>
                 <button
-                  onClick={() => setFolderModal(null)}
-                  className={`px-4 py-2 rounded-lg text-sm ${c.bgTertiary} ${c.text} ${c.hover} border ${c.border}`}
-                >
-                  Abbrechen
-                </button>
-                <button
-                  onClick={submitFolderModal}
-                  disabled={folderModalLoading}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-1.5 ${
-                    folderModal.mode === 'delete'
-                      ? 'bg-red-600 hover:bg-red-500 text-white'
-                      : 'bg-cyan-600 hover:bg-cyan-500 text-white'
+                  onClick={() => setActiveAccountId('__ALL__')}
+                  className={`w-full text-left h-8 px-2 flex items-center gap-2 text-sm rounded-md transition-colors ${
+                    allMode ? `${c.selected} ${c.text} font-semibold` : `${c.text} ${c.paneHover}`
                   }`}
+                  aria-current={allMode ? 'true' : undefined}
                 >
-                  {folderModalLoading && <InProgress size={16} className="animate-spin" />}
-                  {folderModal.mode === 'create' ? 'Erstellen' : folderModal.mode === 'rename' ? 'Umbenennen' : 'Löschen'}
+                  <MailAll size={16} className={allMode ? c.accent : c.textSecondary} />
+                  <span className="truncate flex-1">Alle Konten</span>
+                  {totalUnread > 0 && <span className={`text-xs font-semibold ${c.accent} tabular-nums`}>{totalUnread > 999 ? '999+' : totalUnread}</span>}
                 </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Email List - v1.12.2: Resizable, v2.3.0: Multi-Select, v6.6.2: Hover-Expand */}
-      <div
-        {...mailListPanel.hoverProps}
-        className={`${c.bgSecondary} ${c.border} border-r flex flex-col overflow-hidden min-h-0 relative`}
-        style={{
-          width: mailListPanel.isExpanded ? `${emailListWidth}px` : `${EMAIL_LIST_COLLAPSED_WIDTH}px`,
-          minWidth: mailListPanel.isExpanded ? `${EMAIL_LIST_MIN_WIDTH}px` : `${EMAIL_LIST_COLLAPSED_WIDTH}px`,
-          maxWidth: mailListPanel.isExpanded ? `${EMAIL_LIST_MAX_WIDTH}px` : `${EMAIL_LIST_COLLAPSED_WIDTH}px`,
-          alignSelf: 'stretch',
-          transition: isResizingEmailList ? 'none' : PANEL_TRANSITION
-        }}
-      >
-        {!mailListPanel.isExpanded && (
-          // v6.6.2: Kollabierter Modus — Mini-Vorschau mit Avatar-Initialen + Unread-Ring.
-          // Klick wählt die Mail aus (Preview rendert sich neu); Hover öffnet die Spalte
-          // ohnehin nach kurzer Zeit wenn Modus = auto.
-          <div className="flex flex-col h-full overflow-hidden">
-            <div className={`pt-2 pb-1 px-1 ${c.border} border-b flex flex-col items-center gap-1`}>
-              <PanelModeToggle panel={mailListPanel} c={c} />
-              {unreadCount > 0 && (
-                <span className="px-1 py-0.5 bg-blue-500 text-white text-[10px] rounded-full font-medium min-w-[18px] text-center leading-tight" title={`${unreadCount} ungelesen`}>
-                  {unreadCount > 99 ? '99' : unreadCount}
-                </span>
-              )}
-            </div>
-            <div className="flex-1 overflow-y-auto py-1">
-              {filteredEmails.length === 0 ? (
-                <div className={`p-2 text-center ${c.textSecondary} text-[10px]`}>—</div>
-              ) : (
-                filteredEmails.slice(0, 100).map((email, index) => {
-                  const av = avatarFor(email);
-                  const isUnread = !email.seen;
-                  const isSelected = index === selectedIndex;
+                {accountGroups.map(({ cat, accounts: accs }) => {
+                  const CatIcon = getCategoryIcon(cat.icon);
+                  const isCollapsed = collapsedCats.has(cat.id);
+                  const showGroupHeader = accountGroups.length > 1;
                   return (
-                    <button
-                      key={email.uid}
-                      onClick={() => handleSelectEmail(index)}
-                      title={`${email.fromName || email.from}: ${email.subject || '(Kein Betreff)'}`}
-                      className={`w-full px-1 py-1 flex justify-center transition-colors ${
-                        isSelected ? c.bgTertiary : c.hover
-                      }`}
-                    >
-                      <span
-                        className={`relative inline-flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-semibold ${av.color} ${
-                          isUnread ? 'ring-2 ring-blue-500 ring-offset-1 ring-offset-transparent' : ''
-                        } ${isSelected ? 'shadow-[0_0_0_2px_rgba(6,182,212,0.7)]' : ''}`}
-                      >
-                        {av.initial}
-                      </span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        )}
-        {mailListPanel.isExpanded && (
-        <div className={`p-4 ${c.border} border-b`}>
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 min-w-0">
-                {/* truncate statt Umbruch — lange Kontonamen brachen über 4 Zeilen um */}
-                <h2 className={`font-semibold ${c.text} truncate`} title={account?.name || 'Posteingang'}>{account?.name || 'Posteingang'}</h2>
-                {/* v2.4.0: Show active category filter */}
-                {categoryFilter && currentFolder === 'INBOX' && (
-                  <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-                    INBOX_SUBFOLDERS.find(f => f.id === categoryFilter)?.bgColor || 'bg-gray-500/20'
-                  } ${
-                    INBOX_SUBFOLDERS.find(f => f.id === categoryFilter)?.color || 'text-gray-400'
-                  }`}>
-                    {INBOX_SUBFOLDERS.find(f => f.id === categoryFilter)?.name}
-                    <button
-                      onClick={() => setCategoryFilter(null)}
-                      className="ml-1.5 hover:opacity-70 inline-flex items-center align-middle"
-                      title="Filter entfernen"
-                      aria-label="Kategorie-Filter entfernen"
-                    >
-                      <Close size={12} />
-                    </button>
-                  </span>
-                )}
-              </div>
-              <p className={`text-sm ${c.textSecondary}`}>
-                {filteredEmails.length} E-Mails {currentFolder !== 'INBOX' && `in ${currentFolder}`}
-                {(categoryFilter || showUnreadOnly) && ` (von ${emails.length} gesamt)`}
-                {!categoryFilter && !showUnreadOnly && unreadCount > 0 && (
-                  <span className="ml-2 text-blue-400">({unreadCount} ungelesen)</span>
-                )}
-              </p>
-            </div>
-            <div className="flex items-center gap-1 flex-shrink-0">
-              {/* v2.8.5: Ungelesen-Filter */}
-              <button
-                onClick={() => setShowUnreadOnly(v => !v)}
-                className={`p-2 rounded-lg transition-colors ${showUnreadOnly ? 'bg-blue-500 text-white' : `${c.hover} ${c.textSecondary}`}`}
-                title={showUnreadOnly ? 'Alle E-Mails anzeigen' : 'Nur ungelesene anzeigen'}
-                aria-label={showUnreadOnly ? 'Alle E-Mails anzeigen' : 'Nur ungelesene anzeigen'}
-                aria-pressed={showUnreadOnly}
-              >
-                <Email size={16} />
-              </button>
-              {/* v2.3.0: Toggle Multi-Select */}
-              <button
-                onClick={() => {
-                  setShowCheckboxes(!showCheckboxes);
-                  if (showCheckboxes) setSelectedUids(new Set());
-                }}
-                className={`p-2 ${showCheckboxes ? c.accentBg + ' text-white' : c.hover} rounded-lg transition-colors ${c.textSecondary}`}
-                title="Mehrfachauswahl"
-                aria-label="Mehrfachauswahl"
-                aria-pressed={showCheckboxes}
-              >
-                <CheckboxChecked size={16} />
-              </button>
-              <button
-                onClick={() => fetchEmails(false)}
-                className={`p-2 ${c.hover} rounded-lg transition-colors ${c.textSecondary}`}
-                title="Aktualisieren"
-                aria-label="Aktualisieren"
-              >
-                <Renew size={16} />
-              </button>
-              {/* v6.6.0: AI-Triage */}
-              <button
-                onClick={handleRunTriage}
-                disabled={triageRunning || filteredEmails.length === 0}
-                className={`p-2 rounded-lg transition-colors ${triageRunning ? c.accentBg + ' text-white' : `${c.hover} ${c.textSecondary}`} disabled:opacity-50`}
-                title="Mails durch AI einstufen"
-                aria-label="Mails durch AI einstufen"
-              >
-                {triageRunning ? <InProgress size={16} className="animate-spin" /> : <Bot size={16} />}
-              </button>
-              {/* v6.6.2: Spalten-Modus Toggle */}
-              <PanelModeToggle panel={mailListPanel} c={c} />
-            </div>
-          </div>
-          {triageProgress && (
-            <p className={`mt-2 text-xs ${c.textSecondary}`}>
-              AI-Triage: {triageProgress.processed} / {triageProgress.total} verarbeitet…
-            </p>
-          )}
-          
-          {/* v2.3.0: Multi-Select Controls */}
-          {showCheckboxes && (
-            <div className={`mt-3 pt-3 ${c.border} border-t flex items-center justify-between gap-2`}>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleSelectAll}
-                  className={`px-3 py-1.5 text-xs ${c.hover} rounded-lg transition-colors ${c.textSecondary} flex items-center gap-1.5`}
-                >
-                  {selectedUids.size === filteredEmails.length && filteredEmails.length > 0 ? (
-                    <>
-                      <CloseFilled size={16} />
-                      Keine
-                    </>
-                  ) : (
-                    <>
-                      <CheckboxChecked size={16} />
-                      Alle
-                    </>
-                  )}
-                </button>
-                {selectedUids.size > 0 && (
-                  <span className={`text-xs ${c.accent}`}>
-                    {selectedUids.size} ausgewählt
-                  </span>
-                )}
-              </div>
-              
-              {selectedUids.size > 0 && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleBulkMarkRead}
-                    disabled={actionLoading === 'bulk-read'}
-                    className={`px-3 py-1.5 text-xs ${c.hover} rounded-lg transition-colors ${c.textSecondary} flex items-center gap-1.5`}
-                    title="Ausgewählte als gelesen markieren"
-                  >
-                    {actionLoading === 'bulk-read'
-                      ? <InProgress size={16} className="animate-spin" />
-                      : <Email size={16} />}
-                    Gelesen
-                  </button>
-                  <button
-                    onClick={() => {
-                      // v6.10.0: Bestätigung nur im Papierkorb (endgültig) —
-                      // sonst direkt in den Papierkorb verschieben.
-                      if (isTrashFolder(currentFolder)) setShowDeleteConfirm(true);
-                      else handleBulkDelete();
-                    }}
-                    className="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors flex items-center gap-1.5"
-                  >
-                    <TrashCan size={16} />
-                    Löschen ({selectedUids.size})
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        )}
-        {mailListPanel.isExpanded && (
-        <div
-          ref={emailScrollRef}
-          className="flex-1 overflow-y-auto min-h-0"
-          onScroll={handleEmailListScroll}
-        >
-          {filteredEmails.length === 0 ? (
-            <div className={`p-8 text-center ${c.textSecondary}`}>
-              {showUnreadOnly ? (
-                <div>
-                  <CheckmarkFilled size={32} className="mx-auto mb-2 text-green-400" />
-                  <p>Keine ungelesenen E-Mails</p>
-                  <button
-                    onClick={() => setShowUnreadOnly(false)}
-                    className={`mt-2 text-sm ${c.accent} hover:underline`}
-                  >
-                    Alle E-Mails anzeigen
-                  </button>
-                </div>
-              ) : categoryFilter ? (
-                <div>
-                  <MailAll size={32} className="mx-auto mb-2 opacity-60" />
-                  <p>Keine E-Mails in dieser Kategorie</p>
-                  <button
-                    onClick={() => setCategoryFilter(null)}
-                    className={`mt-2 text-sm ${c.accent} hover:underline`}
-                  >
-                    Alle E-Mails anzeigen
-                  </button>
-                </div>
-              ) : (
-                'Keine E-Mails'
-              )}
-            </div>
-          ) : (
-            <>
-              {filteredEmails.map((email, index) => {
-                // Outlook-artige Gruppen-Header (Heute / Gestern / …)
-                const group = dateGroupOf(email.date);
-                const prevGroup = index > 0 ? dateGroupOf(filteredEmails[index - 1].date) : null;
-                return (
-                  <React.Fragment key={email.uid}>
-                    {group !== prevGroup && (
-                      <div className={`sticky top-0 z-10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${c.bgSecondary} ${c.textSecondary} border-b ${c.border}`}>
-                        {group}
-                      </div>
-                    )}
-                    <EmailListItem
-                      email={email}
-                      index={index}
-                      isSelected={index === selectedIndex}
-                      isChecked={selectedUids.has(email.uid)}
-                      onSelect={handleSelectEmail}
-                      onCheckboxChange={handleCheckboxChange}
-                      onDelete={requestDelete}
-                      onArchive={handleArchive}
-                      onToggleRead={handleToggleRead}
-                      c={c}
-                      actionLoading={actionLoading}
-                      spamAnalysis={effectiveAnalysisMap.get(email.uid)}
-                      showCheckboxes={showCheckboxes}
-                      isSentFolder={isSentFolder}
-                      onDragStart={setDraggedEmail}
-                      triage={triageMap.get(email.uid)}
-                    />
-                  </React.Fragment>
-                );
-              })}
-              {(hasMore || loadingMore) && (
-                <div className="flex items-center justify-center p-4">
-                  {loadingMore
-                    ? <span className={`text-sm ${c.textSecondary}`}>Lade mehr...</span>
-                    : <button onClick={loadMoreEmails} className={`text-sm ${c.accent} hover:underline`}>Mehr laden...</button>
-                  }
-                </div>
-              )}
-            </>
-          )}
-        </div>
-        )}
-
-        {/* v1.12.2: Resize Handle for email list column — nur im offenen Modus */}
-        {mailListPanel.isExpanded && (
-        <div
-          onMouseDown={() => setIsResizingEmailList(true)}
-          className={`absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-cyan-500/50 transition-colors z-10 ${isResizingEmailList ? 'bg-cyan-500' : ''}`}
-          title="Ziehen zum Ändern der Mail-Liste-Breite"
-        >
-          <div className="absolute top-1/2 -translate-y-1/2 -left-2 w-5 h-10 flex items-center justify-center">
-            <DragVertical size={16} className={`${c.textSecondary} opacity-50`} />
-          </div>
-        </div>
-        )}
-      </div>
-
-      {/* Email Preview - v1.12.2: Takes remaining space */}
-      <div
-        className={`relative flex-1 flex flex-col overflow-hidden min-h-0 ${c.bg}`}
-        style={{ minWidth: `${PREVIEW_MIN_WIDTH}px` }}
-      >
-        {replySentToast && (
-          <div className="absolute bottom-6 right-6 z-50 px-4 py-2.5 bg-green-600 text-white text-sm rounded-lg shadow-lg flex items-center gap-2">
-            <CheckmarkFilled size={16} />
-            Antwort gesendet
-          </div>
-        )}
-        {loadingPreview ? (
-          // Skeleton loading state for email preview
-          <div className="flex-1 p-6 space-y-4 animate-pulse">
-            <div className={`h-6 w-3/4 rounded ${c.bgSecondary}`} />
-            <div className={`h-4 w-1/2 rounded ${c.bgSecondary}`} />
-            <div className={`h-4 w-1/3 rounded ${c.bgSecondary}`} />
-            <div className={`h-px w-full ${c.border} border-t mt-4`} />
-            <div className="space-y-3 pt-2">
-              <div className={`h-4 w-full rounded ${c.bgSecondary}`} />
-              <div className={`h-4 w-5/6 rounded ${c.bgSecondary}`} />
-              <div className={`h-4 w-4/5 rounded ${c.bgSecondary}`} />
-              <div className={`h-4 w-full rounded ${c.bgSecondary}`} />
-              <div className={`h-4 w-3/4 rounded ${c.bgSecondary}`} />
-            </div>
-          </div>
-        ) : previewError ? (
-          <div className={`flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center ${c.textSecondary}`}>
-            <WarningAlt size={32} className="text-amber-400" />
-            <p className="text-sm">E-Mail konnte nicht geladen werden</p>
-            <p className="text-xs opacity-70 max-w-sm break-words">{previewError.message}</p>
-            <button
-              onClick={() => loadEmailPreview(previewError.uid)}
-              className={`mt-1 px-4 py-2 text-sm rounded-lg ${c.buttonBg || 'bg-cyan-600 hover:bg-cyan-500'} text-white transition-colors`}
-            >
-              Erneut versuchen
-            </button>
-          </div>
-        ) : selectedEmail ? (
-          <>
-            {/* v1.14.0: Spam warning banner */}
-            {(() => {
-              const analysis = spamResults.get(selectedEmail.uid || emails[selectedIndex]?.uid);
-              if (!analysis || analysis.category === 'sicher') return null;
-              const style = TAG_STYLES[analysis.category];
-              if (!style) return null;
-              
-              return (
-                <div className={`px-4 py-3 ${style.bgColor} border-b ${style.borderColor} border flex items-center gap-3`}>
-                  <Security size={20} className={`${style.textColor} flex-shrink-0`} />
-                  <div className="flex-1">
-                    <div className={`font-medium text-sm ${style.textColor}`}>
-                      {style.label} — {style.description}
-                    </div>
-                    {analysis.reasons?.length > 0 && (
-                      <div className={`text-xs ${style.textColor} opacity-75 mt-0.5`}>
-                        {analysis.reasons.slice(0, 3).join(' • ')}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-            {/* v6.6.2: Kompakterer Preview-Header — weniger vertikaler Platz für Metadata */}
-            <div className={`px-4 py-2 ${c.bgSecondary} ${c.border} border-b`}>
-              <div className="flex justify-between items-start gap-2">
-                <div className="flex-1 min-w-0">
-                  <h2 className={`text-base font-semibold ${c.text} truncate leading-tight`}>
-                    {selectedEmail.subject}
-                  </h2>
-                  <p className={`${c.textSecondary} text-xs mt-0.5 truncate`}>
-                    <span className={c.text}>{selectedEmail.from}</span>
-                    <span className="opacity-60"> · </span>
-                    <span>{new Date(selectedEmail.date).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                  </p>
-                  {/* v6.9.0: Empfänger-Header wie Outlook — kompakt mit
-                      Aufklappen für die vollständige An/Cc-Liste */}
-                  {(selectedEmail.to || selectedEmail.cc) && (
-                    <div className={`text-xs mt-0.5 ${c.textSecondary}`}>
-                      {headerExpanded ? (
-                        <div className="space-y-0.5 py-0.5">
-                          {selectedEmail.to && (
-                            <div className="break-words">
-                              <span className="opacity-60 font-medium">An: </span>
-                              <span className={c.text}>{selectedEmail.to}</span>
-                            </div>
-                          )}
-                          {selectedEmail.cc && (
-                            <div className="break-words">
-                              <span className="opacity-60 font-medium">Cc: </span>
-                              <span className={c.text}>{selectedEmail.cc}</span>
-                            </div>
-                          )}
-                          <button
-                            onClick={() => setHeaderExpanded(false)}
-                            className={`${c.accent} hover:underline flex items-center gap-0.5`}
-                          >
-                            <ChevronDown size={12} className="rotate-180" /> Weniger anzeigen
-                          </button>
-                        </div>
-                      ) : (
+                    <div key={cat.id} className="mt-0.5">
+                      {showGroupHeader && (
                         <button
-                          onClick={() => setHeaderExpanded(true)}
-                          className="flex items-center gap-1 max-w-full hover:underline text-left"
-                          title="Alle Empfänger anzeigen"
+                          onClick={() => toggleCat(cat.id)}
+                          className={`w-full text-left h-7 px-1 flex items-center gap-1.5 text-xs rounded-md ${c.textSecondary} ${c.paneHover}`}
+                          aria-expanded={!isCollapsed}
                         >
-                          <span className="truncate">
-                            <span className="opacity-60">an </span>
-                            {selectedEmail.to}
-                            {selectedEmail.cc && <span className="opacity-60"> · Cc: {selectedEmail.cc}</span>}
+                          {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                          <span className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0" style={{ backgroundColor: cat.color }}>
+                            <CatIcon size={10} className="text-white" />
                           </span>
-                          <ChevronDown size={12} className="flex-shrink-0 opacity-60" />
+                          <span className="truncate font-medium">{cat.name}</span>
                         </button>
                       )}
+                      {!isCollapsed && accs.map(acc => {
+                        const isActiveAcc = activeAccountId === acc.id;
+                        const n = accountStats?.[acc.id]?.unread || 0;
+                        return (
+                          <button
+                            key={acc.id}
+                            onClick={() => setActiveAccountId(acc.id)}
+                            className={`w-full text-left h-8 pr-2 flex items-center gap-2 text-sm rounded-md transition-colors ${
+                              isActiveAcc ? `${c.selected} ${c.text} font-semibold` : `${c.text} ${c.paneHover}`
+                            }`}
+                            style={{ paddingLeft: showGroupHeader ? 24 : 8 }}
+                            title={acc.name}
+                            aria-current={isActiveAcc ? 'true' : undefined}
+                          >
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${acc.type === 'microsoft' ? 'bg-ms-blue' : 'bg-emerald-500'}`} aria-hidden="true" />
+                            <span className="truncate flex-1">{acc.displayName || acc.name}</span>
+                            {n > 0 && <span className={`text-xs font-semibold ${c.accent} tabular-nums`}>{n > 999 ? '999+' : n}</span>}
+                          </button>
+                        );
+                      })}
                     </div>
-                  )}
-                </div>
-                {/* v2.9.3: Reply buttons + full view */}
-                <div className="flex items-center gap-1 flex-shrink-0">
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Ordner */}
+            {!folderPaneCollapsed && (
+              <div className={`px-2 pt-1 pb-1.5 flex items-center gap-1 ${c.textSecondary}`}>
+                <span className="text-[11px] font-semibold uppercase tracking-wide truncate flex-1" title={allMode ? 'Alle Konten' : (account?.name || '')}>
+                  {showAccountSection ? (allMode ? 'Alle Konten' : (account?.displayName || account?.name || 'Ordner')) : 'Ordner'}
+                </span>
+                {!allMode && (
+                  <>
+                    <button onClick={openCreateFolder} title="Neuer Ordner" aria-label="Neuer Ordner" className={`p-1 rounded ${c.paneHover}`}>
+                      <FolderAdd size={14} />
+                    </button>
+                    <button
+                      onClick={() => { folderCache.delete(`folders:${activeAccountId}`); loadFolders(true); }}
+                      title="Ordner synchronisieren"
+                      aria-label="Ordner synchronisieren"
+                      className={`p-1 rounded ${c.paneHover}`}
+                    >
+                      <Renew size={14} className={loadingFolders ? 'animate-spin' : ''} />
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {flatFolders.map(folder => (
+              <div
+                key={folder.path}
+                onMouseEnter={() => setHoveredFolder(folder.path)}
+                onMouseLeave={() => setHoveredFolder(null)}
+                className="relative"
+              >
+                {renderFolderRow(folder)}
+
+                {/* Umbenennen / Löschen — nur eigene Ordner, nur offen */}
+                {!folderPaneCollapsed && hoveredFolder === folder.path && !SYSTEM_FOLDERS.has(folder.path) && !allMode && (
+                  <div className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 z-10 ${c.pane} rounded-md`}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openRenameFolder(folder); }}
+                      title="Umbenennen"
+                      aria-label="Umbenennen"
+                      className={`p-1 rounded ${c.paneHover} ${c.textSecondary}`}
+                    >
+                      <Edit size={14} />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openDeleteFolder(folder); }}
+                      title="Löschen"
+                      aria-label="Ordner löschen"
+                      className={`p-1 rounded ${c.paneHover} ${c.textSecondary} hover:text-ms-red`}
+                    >
+                      <TrashCan size={14} />
+                    </button>
+                  </div>
+                )}
+
+                {/* v2.4.0: Virtuelle Unterordner des Posteingangs (Spam-Filter) */}
+                {folder.path === 'INBOX' && inboxExpanded && spamFilterEnabled && !allMode && !folderPaneCollapsed && (
+                  <div>
+                    {INBOX_SUBFOLDERS.map(subfolder => {
+                      const SubIcon = subfolder.icon;
+                      const count = categoryCounts[subfolder.id] || 0;
+                      const isActive = currentFolder === 'INBOX' && categoryFilter === subfolder.id;
+                      return (
+                        <button
+                          key={subfolder.id}
+                          onClick={() => { setCurrentFolder('INBOX'); setCategoryFilter(subfolder.id); }}
+                          className={`w-full text-left h-7 pr-2 flex items-center gap-1.5 text-[13px] rounded-md transition-colors ${
+                            isActive ? `${c.selected} ${c.text} font-semibold` : `${c.textSecondary} ${c.paneHover}`
+                          }`}
+                          style={{ paddingLeft: '32px' }}
+                          aria-current={isActive ? 'true' : undefined}
+                        >
+                          <SubIcon size={14} className="flex-shrink-0" />
+                          <span className="truncate flex-1">{subfolder.name}</span>
+                          {count > 0 && <span className={`text-xs tabular-nums ${isActive ? c.accent : c.textSecondary}`}>{count}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {flatFolders.length === 0 && !loadingFolders && !folderPaneCollapsed && (
+              <button
+                onClick={() => setCurrentFolder('INBOX')}
+                className={`w-full text-left h-8 px-2 flex items-center gap-2 text-sm rounded-md ${currentFolder === 'INBOX' ? `${c.selected} font-semibold` : c.paneHover} ${c.text}`}
+              >
+                <MailAll size={16} className={c.textSecondary} />
+                Posteingang
+                {unreadCount > 0 && <span className={`ml-auto text-xs font-semibold ${c.accent}`}>{unreadCount}</span>}
+              </button>
+            )}
+          </div>
+
+          {!folderPaneCollapsed && (
+            <div
+              onMouseDown={() => setIsResizingFolder(true)}
+              className={`cm-resizer ${isResizingFolder ? 'active' : ''}`}
+              title="Ziehen zum Ändern der Breite"
+            />
+          )}
+
+          {/* ── Folder Modal (create / rename / delete) ── */}
+          {folderModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setFolderModal(null)}>
+              <div
+                className={`w-80 rounded-xl p-6 ${c.popover} border ${c.border} shadow-2xl`}
+                onClick={e => e.stopPropagation()}
+              >
+                {folderModal.mode === 'create' && (
+                  <>
+                    <h3 className={`text-base font-semibold ${c.text} mb-4 flex items-center gap-2`}>
+                      <FolderAdd size={20} className={c.accent} /> Neuer Ordner
+                    </h3>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={folderModalInput}
+                      onChange={e => setFolderModalInput(e.target.value)}
+                      onKeyDown={handleFolderModalKey}
+                      placeholder="Ordnername…"
+                      className={`w-full px-3 py-2 rounded-md text-sm ${c.input} border focus:outline-none mb-3`}
+                    />
+                  </>
+                )}
+                {folderModal.mode === 'rename' && (
+                  <>
+                    <h3 className={`text-base font-semibold ${c.text} mb-4 flex items-center gap-2`}>
+                      <Edit size={20} className={c.accent} /> Ordner umbenennen
+                    </h3>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={folderModalInput}
+                      onChange={e => setFolderModalInput(e.target.value)}
+                      onKeyDown={handleFolderModalKey}
+                      placeholder="Neuer Name…"
+                      className={`w-full px-3 py-2 rounded-md text-sm ${c.input} border focus:outline-none mb-3`}
+                    />
+                  </>
+                )}
+                {folderModal.mode === 'delete' && (
+                  <>
+                    <h3 className={`text-base font-semibold ${c.text} mb-2 flex items-center gap-2`}>
+                      <TrashCan size={20} className="text-ms-red" /> Ordner löschen
+                    </h3>
+                    <p className={`text-sm ${c.textSecondary} mb-4`}>
+                      Ordner <strong className={c.text}>"{folderModal.folder.name}"</strong> dauerhaft löschen?
+                      Alle enthaltenen E-Mails werden ebenfalls gelöscht.
+                    </p>
+                  </>
+                )}
+                {folderModalError && (
+                  <p className="text-xs text-ms-red mb-3 flex items-center gap-1">
+                    <WarningAlt size={16} className="flex-shrink-0" /> {folderModalError}
+                  </p>
+                )}
+                <div className="flex gap-2 justify-end">
                   <button
-                    onClick={() => setReplyMode(replyMode === 'reply' ? null : 'reply')}
-                    className={`p-2 rounded-lg transition-colors flex items-center gap-1.5 text-sm ${
-                      replyMode === 'reply'
-                        ? `${c.accentBg} text-white`
-                        : `${c.hover} ${c.textSecondary}`
+                    onClick={() => setFolderModal(null)}
+                    className={`px-4 py-2 rounded-md text-sm ${c.bgTertiary} ${c.text} ${c.hover} border ${c.border}`}
+                  >
+                    Abbrechen
+                  </button>
+                  <button
+                    onClick={submitFolderModal}
+                    disabled={folderModalLoading}
+                    className={`px-4 py-2 rounded-md text-sm font-medium disabled:opacity-50 flex items-center gap-1.5 text-white ${
+                      folderModal.mode === 'delete' ? 'bg-red-600 hover:bg-red-500' : `${c.accentBg} ${c.accentHover}`
                     }`}
-                    title="Antworten"
                   >
-                    <Reply size={16} />
-                    <span className="hidden xl:inline">Antworten</span>
-                  </button>
-                  <button
-                    onClick={() => setReplyMode(replyMode === 'replyAll' ? null : 'replyAll')}
-                    className={`p-2 rounded-lg transition-colors flex items-center gap-1.5 text-sm ${
-                      replyMode === 'replyAll'
-                        ? `${c.accentBg} text-white`
-                        : `${c.hover} ${c.textSecondary}`
-                    }`}
-                    title="Allen antworten"
-                  >
-                    <ReplyAll size={16} />
-                    <span className="hidden xl:inline">Allen</span>
-                  </button>
-                  <button
-                    onClick={() => onForward && onForward(selectedEmail)}
-                    className={`p-2 rounded-lg transition-colors flex items-center gap-1.5 text-sm ${c.hover} ${c.textSecondary}`}
-                    title="Weiterleiten"
-                  >
-                    <SendAlt size={16} />
-                    <span className="hidden xl:inline">Weiterleiten</span>
-                  </button>
-                  <button
-                    ref={snoozeBtnRef}
-                    onClick={() => {
-                      const rect = snoozeBtnRef.current?.getBoundingClientRect() || null;
-                      setSnoozeAnchorRect(rect);
-                      setSnoozeMenuOpen(v => !v);
-                    }}
-                    className={`p-2 rounded-lg transition-colors flex items-center gap-1.5 text-sm ${snoozeMenuOpen ? `${c.accentBg} text-white` : `${c.hover} ${c.textSecondary}`}`}
-                    title="Erinnern"
-                  >
-                    <Time size={16} />
-                    <span className="hidden xl:inline">Erinnern</span>
-                  </button>
-                  {/* v6.10.0: Archivieren + Löschen direkt in der Vorschau */}
-                  <button
-                    onClick={() => handleArchive(selectedEmail.uid)}
-                    className={`p-2 rounded-lg transition-colors flex items-center gap-1.5 text-sm ${c.hover} ${c.textSecondary}`}
-                    title="Archivieren (E)"
-                  >
-                    <Archive size={16} />
-                    <span className="hidden xl:inline">Archiv</span>
-                  </button>
-                  <button
-                    onClick={() => requestDelete(selectedEmail.uid)}
-                    className={`p-2 rounded-lg transition-colors flex items-center gap-1.5 text-sm ${c.hover} text-red-400 hover:text-red-300`}
-                    title="Löschen (Entf)"
-                  >
-                    <TrashCan size={16} />
-                  </button>
-                  <div className={`w-px h-5 ${c.border} border-l mx-1`} />
-                  <button
-                    onClick={() => onFullView(selectedEmail, currentFolder)}
-                    className={`px-3 py-2 ${c.accentBg} ${c.accentHover} text-white rounded-lg text-sm transition-colors`}
-                  >
-                    Vollansicht →
+                    {folderModalLoading && <InProgress size={16} className="animate-spin" />}
+                    {folderModal.mode === 'create' ? 'Erstellen' : folderModal.mode === 'rename' ? 'Umbenennen' : 'Löschen'}
                   </button>
                 </div>
               </div>
             </div>
+          )}
+        </div>
 
-            {/* v2.6.0: Manual Categorization Buttons */}
-            <CategoryButtons
-              email={selectedEmail}
-              currentCategory={manualCategories.get(selectedEmail?.uid)}
-              onCategorize={handleCategorize}
-              c={c}
-            />
-
-            {/* Übersetzen-Button */}
-            <TranslateBar email={selectedEmail} c={c} />
-
-            <div className={`flex-1 overflow-auto ${c.bg} flex flex-col`}>
-              {/* v2.9.3: Inline Reply Panel — oberhalb des Mails */}
-              {replyMode && (
-                <div
-                  className={`relative border-b ${c.border} ${c.bgSecondary} flex-shrink-0`}
-                  onDragEnter={(e) => {
-                    if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return;
-                    e.preventDefault();
-                    replyDragDepthRef.current += 1;
-                    setReplyDragging(true);
+        {/* ── Mail-Liste ── */}
+        <div
+          ref={listPaneRef}
+          className={`${c.list} ${c.border} border-r flex flex-col overflow-hidden min-h-0 relative flex-shrink-0`}
+          style={{ width: emailListWidth }}
+        >
+          {/* Listenkopf: Ordnername · Zähler · Werkzeuge · Alle/Ungelesen */}
+          <div className={`px-3 pt-2.5 pb-2 ${c.border} border-b flex-shrink-0`}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className={`text-[15px] font-semibold ${c.text} truncate leading-tight`} title={currentFolderName}>{currentFolderName}</h2>
+                <p className={`text-xs ${c.textSecondary} truncate mt-0.5`}>
+                  {filteredEmails.length} {filteredEmails.length === 1 ? 'E-Mail' : 'E-Mails'}
+                  {(categoryFilter || showUnreadOnly) && ` von ${emails.length}`}
+                  {!categoryFilter && !showUnreadOnly && unreadCount > 0 && ` · ${unreadCount} ungelesen`}
+                </p>
+              </div>
+              <div className="flex items-center gap-0.5 flex-shrink-0">
+                <button
+                  onClick={() => {
+                    setShowCheckboxes(!showCheckboxes);
+                    if (showCheckboxes) setSelectedUids(new Set());
                   }}
-                  onDragOver={(e) => {
-                    if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'copy';
-                  }}
-                  onDragLeave={() => {
-                    replyDragDepthRef.current = Math.max(0, replyDragDepthRef.current - 1);
-                    if (replyDragDepthRef.current === 0) setReplyDragging(false);
-                  }}
-                  onDrop={(e) => {
-                    if (!e.dataTransfer?.files?.length) return;
-                    e.preventDefault();
-                    replyDragDepthRef.current = 0;
-                    setReplyDragging(false);
-                    addReplyFiles(e.dataTransfer.files);
-                  }}
+                  className={`p-1.5 rounded-md transition-colors ${showCheckboxes ? `${c.selected} ${c.accent}` : `${c.hover} ${c.textSecondary}`}`}
+                  title="Mehrfachauswahl"
+                  aria-label="Mehrfachauswahl"
+                  aria-pressed={showCheckboxes}
                 >
-                  {replyDragging && (
-                    <div className="absolute inset-0 z-20 flex items-center justify-center rounded border-2 border-dashed border-cyan-400 bg-cyan-500/10 backdrop-blur-[1px] pointer-events-none">
-                      <span className="flex items-center gap-2 text-cyan-300 text-sm font-medium">
-                        <Attachment size={20} /> Dateien hier ablegen, um sie anzuhängen
+                  <CheckboxChecked size={16} />
+                </button>
+                <button
+                  onClick={() => fetchEmails(false)}
+                  className={`p-1.5 ${c.hover} rounded-md transition-colors ${c.textSecondary}`}
+                  title="Aktualisieren"
+                  aria-label="Aktualisieren"
+                >
+                  <Renew size={16} />
+                </button>
+                <button
+                  onClick={handleRunTriage}
+                  disabled={triageRunning || filteredEmails.length === 0}
+                  className={`p-1.5 rounded-md transition-colors ${triageRunning ? `${c.selected} ${c.accent}` : `${c.hover} ${c.textSecondary}`} disabled:opacity-40`}
+                  title="Mails durch KI einstufen"
+                  aria-label="Mails durch KI einstufen"
+                >
+                  {triageRunning ? <InProgress size={16} className="animate-spin" /> : <Bot size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <div className={`inline-flex rounded-md border ${c.border} p-0.5 ${c.bgTertiary}`} role="tablist" aria-label="Filter">
+                <button
+                  role="tab"
+                  aria-selected={!showUnreadOnly}
+                  onClick={() => setShowUnreadOnly(false)}
+                  className={`px-2.5 h-6 text-xs rounded transition-colors ${!showUnreadOnly ? `${c.list} ${c.text} font-semibold shadow-sm` : c.textSecondary}`}
+                >
+                  Alle
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={showUnreadOnly}
+                  onClick={() => setShowUnreadOnly(true)}
+                  className={`px-2.5 h-6 text-xs rounded transition-colors ${showUnreadOnly ? `${c.list} ${c.text} font-semibold shadow-sm` : c.textSecondary}`}
+                >
+                  Ungelesen{unreadCount > 0 ? ` ${unreadCount}` : ''}
+                </button>
+              </div>
+              {activeCategoryDef && currentFolder === 'INBOX' && (
+                <span className={`cm-badge cm-badge-${activeCategoryDef.badge}`}>
+                  <span>{activeCategoryDef.name}</span>
+                  <button onClick={() => setCategoryFilter(null)} className="inline-flex" title="Filter entfernen" aria-label="Kategorie-Filter entfernen">
+                    <Close size={12} />
+                  </button>
+                </span>
+              )}
+              {triageProgress && !activeCategoryDef && (
+                <span className={`text-xs ${c.textSecondary} truncate`}>KI: {triageProgress.processed}/{triageProgress.total}</span>
+              )}
+            </div>
+
+            {/* v2.3.0: Multi-Select Controls */}
+            {showCheckboxes && (
+              <div className={`mt-2 pt-2 ${c.border} border-t flex items-center justify-between gap-2`}>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSelectAll}
+                    className={`px-2 py-1 text-xs ${c.hover} rounded-md ${c.textSecondary} flex items-center gap-1.5`}
+                  >
+                    {selectedUids.size === filteredEmails.length && filteredEmails.length > 0
+                      ? <><CloseFilled size={14} /> Keine</>
+                      : <><CheckboxChecked size={14} /> Alle</>}
+                  </button>
+                  {selectedUids.size > 0 && (
+                    <span className={`text-xs font-medium ${c.accent}`}>{selectedUids.size} ausgewählt</span>
+                  )}
+                </div>
+                {selectedUids.size > 0 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={handleBulkMarkRead}
+                      disabled={actionLoading === 'bulk-read'}
+                      className={`px-2 py-1 text-xs ${c.hover} rounded-md ${c.text} flex items-center gap-1.5 border ${c.border}`}
+                      title="Ausgewählte als gelesen markieren"
+                    >
+                      {actionLoading === 'bulk-read' ? <InProgress size={14} className="animate-spin" /> : <Email size={14} />}
+                      Gelesen
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (isTrashFolder(currentFolder)) setShowDeleteConfirm(true);
+                        else handleBulkDelete();
+                      }}
+                      className="px-2 py-1 text-xs bg-red-600 hover:bg-red-500 text-white rounded-md flex items-center gap-1.5"
+                    >
+                      <TrashCan size={14} />
+                      Löschen ({selectedUids.size})
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div
+            ref={emailScrollRef}
+            className="flex-1 overflow-y-auto min-h-0"
+            onScroll={handleEmailListScroll}
+          >
+            {filteredEmails.length === 0 ? (
+              <div className={`p-8 text-center ${c.textSecondary}`}>
+                {showUnreadOnly ? (
+                  <div>
+                    <CheckmarkFilled size={32} className="mx-auto mb-2 text-green-500" />
+                    <p className="text-sm">Keine ungelesenen E-Mails</p>
+                    <button onClick={() => setShowUnreadOnly(false)} className={`mt-2 text-sm ${c.accent} hover:underline`}>
+                      Alle E-Mails anzeigen
+                    </button>
+                  </div>
+                ) : categoryFilter ? (
+                  <div>
+                    <MailAll size={32} className="mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Keine E-Mails in dieser Kategorie</p>
+                    <button onClick={() => setCategoryFilter(null)} className={`mt-2 text-sm ${c.accent} hover:underline`}>
+                      Alle E-Mails anzeigen
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <MailAll size={32} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">Keine E-Mails in diesem Ordner</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                {filteredEmails.map((email, index) => {
+                  // Outlook-artige Gruppen-Header (Heute / Gestern / …)
+                  const group = dateGroupOf(email.date);
+                  const prevGroup = index > 0 ? dateGroupOf(filteredEmails[index - 1].date) : null;
+                  return (
+                    <React.Fragment key={email.uid}>
+                      {group !== prevGroup && (
+                        <div className={`sticky top-0 z-10 px-3 py-1 text-xs font-semibold ${c.list} ${c.textSecondary} border-b ${c.border}`}>
+                          {group}
+                        </div>
+                      )}
+                      <EmailListItem
+                        email={email}
+                        index={index}
+                        isSelected={index === selectedIndex}
+                        isChecked={selectedUids.has(email.uid)}
+                        onSelect={handleSelectEmail}
+                        onCheckboxChange={handleCheckboxChange}
+                        onDelete={requestDelete}
+                        onArchive={handleArchive}
+                        onToggleRead={handleToggleRead}
+                        c={c}
+                        actionLoading={actionLoading}
+                        spamAnalysis={effectiveAnalysisMap.get(email.uid)}
+                        showCheckboxes={showCheckboxes}
+                        isSentFolder={isSentFolder}
+                        onDragStart={setDraggedEmail}
+                        triage={triageMap.get(email.uid)}
+                      />
+                    </React.Fragment>
+                  );
+                })}
+                {(hasMore || loadingMore) && (
+                  <div className="flex items-center justify-center p-4">
+                    {loadingMore
+                      ? <span className={`text-sm ${c.textSecondary}`}>Lade mehr…</span>
+                      : <button onClick={loadMoreEmails} className={`text-sm ${c.accent} hover:underline`}>Mehr laden…</button>
+                    }
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div
+            onMouseDown={() => setIsResizingEmailList(true)}
+            className={`cm-resizer ${isResizingEmailList ? 'active' : ''}`}
+            title="Ziehen zum Ändern der Breite"
+          />
+        </div>
+
+        {/* ── Lese-Blatt (immer weiss) ── */}
+        <div
+          className={`relative flex-1 flex flex-col overflow-hidden min-h-0 ${c.bg}`}
+          style={{ minWidth: `${PREVIEW_MIN_WIDTH}px` }}
+        >
+          {replySentToast && (
+            <div className="absolute bottom-6 right-6 z-50 px-4 py-2.5 bg-green-600 text-white text-sm rounded-md shadow-lg flex items-center gap-2">
+              <CheckmarkFilled size={16} />
+              Antwort gesendet
+            </div>
+          )}
+          {loadingPreview ? (
+            <div className="cm-sheet flex-1 p-6 space-y-4">
+              <div className="cm-skeleton h-6 w-3/4" />
+              <div className="flex items-center gap-3">
+                <div className="cm-skeleton h-10 w-10 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <div className="cm-skeleton h-3.5 w-1/3" />
+                  <div className="cm-skeleton h-3 w-1/4" />
+                </div>
+              </div>
+              <div className="space-y-3 pt-4">
+                <div className="cm-skeleton h-3.5 w-full" />
+                <div className="cm-skeleton h-3.5 w-5/6" />
+                <div className="cm-skeleton h-3.5 w-4/5" />
+                <div className="cm-skeleton h-3.5 w-full" />
+                <div className="cm-skeleton h-3.5 w-3/4" />
+              </div>
+            </div>
+          ) : previewError ? (
+            <div className={`cm-sheet flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center ${s.textSecondary}`}>
+              <WarningAlt size={32} className="text-amber-500" />
+              <p className="text-sm">E-Mail konnte nicht geladen werden</p>
+              <p className="text-xs opacity-70 max-w-sm break-words">{previewError.message}</p>
+              <button
+                onClick={() => loadEmailPreview(previewError.uid)}
+                className={`mt-1 px-4 py-2 text-sm rounded-md ${s.accentBg} ${s.accentHover} text-white`}
+              >
+                Erneut versuchen
+              </button>
+            </div>
+          ) : selectedEmail ? (
+            <SheetTheme>
+              <div className="cm-sheet flex-1 flex flex-col overflow-hidden min-h-0">
+                {/* Kopf: Betreff · Absender · Empfänger · Aktionen */}
+                <div className={`px-6 pt-5 pb-3 border-b ${s.border} flex-shrink-0`}>
+                  <h2 className={`text-xl font-semibold ${s.text} leading-snug break-words`}>
+                    {selectedEmail.subject || '(Kein Betreff)'}
+                  </h2>
+                  <div className="mt-3 flex items-start gap-3">
+                    {(() => { const av = avatarFor(selectedEmail); return (
+                      <span className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-white text-sm font-semibold ${av.color}`} aria-hidden="true">
+                        {av.initial}
                       </span>
+                    ); })()}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline justify-between gap-x-3 flex-wrap">
+                        <span className={`text-[15px] font-semibold ${s.text} truncate min-w-[10rem]`}>{selectedEmail.fromName || displayNameOf(selectedEmail.from) || selectedEmail.from}</span>
+                        <span className={`text-xs ${s.textSecondary} flex-shrink-0`} title={new Date(selectedEmail.date).toLocaleString('de-DE')}>{sheetDate(selectedEmail.date)}</span>
+                      </div>
+                      {addressOf(selectedEmail.from) !== (selectedEmail.fromName || displayNameOf(selectedEmail.from)) && (
+                        <div className={`text-xs ${s.textSecondary} truncate`}>{addressOf(selectedEmail.from)}</div>
+                      )}
+                      {/* v6.9.0: Empfänger wie Outlook — kompakt, aufklappbar */}
+                      {(selectedEmail.to || selectedEmail.cc) && (
+                        <div className={`text-xs mt-0.5 ${s.textSecondary}`}>
+                          {headerExpanded ? (
+                            <div className="space-y-0.5 py-0.5">
+                              {selectedEmail.to && (
+                                <div className="break-words"><span className="font-medium">An: </span><span className={s.text}>{selectedEmail.to}</span></div>
+                              )}
+                              {selectedEmail.cc && (
+                                <div className="break-words"><span className="font-medium">Cc: </span><span className={s.text}>{selectedEmail.cc}</span></div>
+                              )}
+                              <button onClick={() => setHeaderExpanded(false)} className={`${s.accent} hover:underline flex items-center gap-0.5`}>
+                                <ChevronDown size={12} className="rotate-180" /> Weniger anzeigen
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setHeaderExpanded(true)}
+                              className="flex items-center gap-1 max-w-full hover:underline text-left"
+                              title="Alle Empfänger anzeigen"
+                            >
+                              <span className="truncate">
+                                <span>An: </span>
+                                {displayNamesOf(selectedEmail.to)}
+                                {selectedEmail.cc && <span> · Cc: {displayNamesOf(selectedEmail.cc)}</span>}
+                              </span>
+                              <ChevronDown size={12} className="flex-shrink-0" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <button
+                        onClick={() => setReplyMode(replyMode === 'reply' ? null : 'reply')}
+                        className={`p-2 rounded-md transition-colors ${replyMode === 'reply' ? `${s.selected} ${s.accent}` : `${s.hover} ${s.textSecondary}`}`}
+                        title="Antworten (R)"
+                        aria-label="Antworten"
+                      >
+                        <Reply size={18} />
+                      </button>
+                      <button
+                        onClick={() => setReplyMode(replyMode === 'replyAll' ? null : 'replyAll')}
+                        className={`p-2 rounded-md transition-colors ${replyMode === 'replyAll' ? `${s.selected} ${s.accent}` : `${s.hover} ${s.textSecondary}`}`}
+                        title="Allen antworten (A)"
+                        aria-label="Allen antworten"
+                      >
+                        <ReplyAll size={18} />
+                      </button>
+                      <button
+                        onClick={() => onForward && onForward(selectedEmail)}
+                        className={`p-2 rounded-md transition-colors ${s.hover} ${s.textSecondary}`}
+                        title="Weiterleiten (F)"
+                        aria-label="Weiterleiten"
+                      >
+                        <SendAlt size={18} />
+                      </button>
+                      <div className={`w-px h-5 mx-1 ${s.border} border-l`} />
+                      <button
+                        onClick={() => onFullView(selectedEmail, currentFolder)}
+                        className={`p-2 rounded-md transition-colors ${s.hover} ${s.textSecondary}`}
+                        title="In der Vollansicht öffnen (Enter)"
+                        aria-label="In der Vollansicht öffnen"
+                      >
+                        <Launch size={18} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Werkzeugzeile: Übersetzen · Absender einstufen */}
+                  <div className="mt-3 flex items-center gap-4 flex-wrap">
+                    <TranslateBar email={selectedEmail} c={s} />
+                    <CategoryButtons
+                      email={selectedEmail}
+                      currentCategory={manualCategories.get(selectedEmail?.uid)}
+                      onCategorize={handleCategorize}
+                      c={s}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-auto flex flex-col">
+                  {/* v1.14.0: Spam-Warnung */}
+                  {selectedSpam && selectedSpam.category !== 'sicher' && TAG_STYLES[selectedSpam.category] && (
+                    <div className={`mx-6 mt-4 cm-banner cm-banner-${selectedSpamColor}`}>
+                      <Security size={20} className="flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm">
+                          {TAG_STYLES[selectedSpam.category].label} — {TAG_STYLES[selectedSpam.category].description}
+                        </div>
+                        {selectedSpam.reasons?.length > 0 && (
+                          <div className="text-xs opacity-80 mt-0.5">
+                            {selectedSpam.reasons.slice(0, 3).join(' • ')}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
-                  {/* Reply header */}
-                  <div className={`px-4 py-2 border-b ${c.border} flex items-center justify-between`}>
-                    <div className={`text-sm font-medium ${c.text} flex items-center gap-2`}>
-                      {replyMode === 'replyAll' ? <ReplyAll size={16} /> : <Reply size={16} />}
-                      <span>{replyMode === 'replyAll' ? 'Allen antworten' : 'Antworten'}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {replyError && <span className="text-xs text-red-400">{replyError}</span>}
-                      <button
-                        onClick={handleSendReply}
-                        disabled={replySending}
-                        className={`px-3 py-1.5 ${c.accentBg} ${c.accentHover} text-white rounded-lg text-sm transition-colors flex items-center gap-1.5 disabled:opacity-50`}
-                      >
-                        {replySending ? <><InProgress size={16} className="animate-spin" /> Sende...</> : <><Send size={16} /> Senden</>}
-                      </button>
-                      <button
-                        onClick={() => {
-                          // v6.8.1: Halb geschriebene Antwort nicht stillschweigend verwerfen
-                          if (replyEditorRef.current?.innerText?.trim()) {
-                            setConfirmDiscardReply(true);
-                          } else {
-                            setReplyMode(null);
-                            setReplyError(null);
-                            if (replyEditorRef.current) replyEditorRef.current.innerHTML = '';
-                          }
-                        }}
-                        className={`p-1.5 ${c.hover} rounded ${c.textSecondary}`}
-                        title="Antwort schliessen"
-                        aria-label="Antwort schliessen"
-                      >
-                        <Close size={16} />
-                      </button>
-                    </div>
-                  </div>
 
-                  {/* v6.9.1: Editierbare Empfänger — weitere Adressen hinzufügbar,
-                      mit Kontakte-Autocomplete wie im Compose */}
-                  <div className={`px-4 py-2 border-b ${c.border} space-y-1.5`}>
-                    <EmailTagInput
-                      label="An:"
-                      tags={replyToTags}
-                      onChange={setReplyToTags}
-                      placeholder="empfaenger@example.com"
-                      c={c}
-                    />
-                    {replyShowCc ? (
-                      <EmailTagInput
-                        label="CC:"
-                        tags={replyCcTags}
-                        onChange={setReplyCcTags}
-                        placeholder="cc@example.com"
-                        c={c}
-                      />
-                    ) : (
-                      <button
-                        onClick={() => setReplyShowCc(true)}
-                        className={`text-xs ${c.textSecondary} hover:${c.text} hover:underline ml-[76px]`}
-                      >
-                        + CC hinzufügen
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Formatting toolbar */}
-                  <div className={`flex items-center gap-1 px-3 py-1.5 border-b ${c.border} ${c.bg}`}>
-                    {[
-                      { cmd: 'bold',      label: <strong>B</strong>,  title: 'Fett (Ctrl+B)' },
-                      { cmd: 'italic',    label: <em>I</em>,           title: 'Kursiv (Ctrl+I)' },
-                      { cmd: 'underline', label: <span style={{textDecoration:'underline'}}>U</span>, title: 'Unterstrichen (Ctrl+U)' },
-                    ].map(btn => (
-                      <button
-                        key={btn.cmd}
-                        onMouseDown={e => { e.preventDefault(); replyEditorRef.current?.focus(); document.execCommand(btn.cmd, false, null); }}
-                        title={btn.title}
-                        className={`w-7 h-7 flex items-center justify-center rounded text-xs ${c.hover} ${c.textSecondary} hover:text-cyan-400`}
-                      >
-                        {btn.label}
-                      </button>
-                    ))}
-                    <div className={`w-px h-4 ${c.border} border-l mx-1`} />
-                    {[
-                      { cmd: 'insertUnorderedList', label: '•', title: 'Aufzählungsliste' },
-                      { cmd: 'insertOrderedList',   label: '1.', title: 'Nummerierte Liste' },
-                    ].map(btn => (
-                      <button
-                        key={btn.cmd}
-                        onMouseDown={e => { e.preventDefault(); replyEditorRef.current?.focus(); document.execCommand(btn.cmd, false, null); }}
-                        title={btn.title}
-                        className={`w-7 h-7 flex items-center justify-center rounded text-xs ${c.hover} ${c.textSecondary} hover:text-cyan-400`}
-                      >
-                        {btn.label}
-                      </button>
-                    ))}
-                    <div className={`w-px h-4 ${c.border} border-l mx-1`} />
-                    <button
-                      onMouseDown={e => { e.preventDefault(); replyEditorRef.current?.focus(); document.execCommand('removeFormat', false, null); }}
-                      title="Formatierung entfernen"
-                      className={`w-7 h-7 flex items-center justify-center rounded ${c.hover} ${c.textSecondary} hover:text-cyan-400`}
+                  {/* v2.9.3: Inline-Antwort — oberhalb der Mail */}
+                  {replyMode && (
+                    <div
+                      className={`relative mx-6 mt-4 rounded-lg border ${s.border} ${s.bgSecondary} flex-shrink-0 overflow-hidden`}
+                      onDragEnter={(e) => {
+                        if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return;
+                        e.preventDefault();
+                        replyDragDepthRef.current += 1;
+                        setReplyDragging(true);
+                      }}
+                      onDragOver={(e) => {
+                        if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'copy';
+                      }}
+                      onDragLeave={() => {
+                        replyDragDepthRef.current = Math.max(0, replyDragDepthRef.current - 1);
+                        if (replyDragDepthRef.current === 0) setReplyDragging(false);
+                      }}
+                      onDrop={(e) => {
+                        if (!e.dataTransfer?.files?.length) return;
+                        e.preventDefault();
+                        replyDragDepthRef.current = 0;
+                        setReplyDragging(false);
+                        addReplyFiles(e.dataTransfer.files);
+                      }}
                     >
-                      <Close size={16} />
-                    </button>
-                    <div className={`w-px h-4 ${c.border} border-l mx-1`} />
-                    <button
-                      onClick={() => replyFileInputRef.current?.click()}
-                      title="Anhang hinzufügen (oder Dateien ins Antwortfeld ziehen)"
-                      className={`h-7 px-2 flex items-center gap-1.5 rounded text-xs border ${c.border} ${c.hover} ${replyAttachments.length > 0 ? 'text-cyan-400' : c.textSecondary} hover:text-cyan-400`}
-                    >
-                      <Attachment size={16} /> Anhang
-                    </button>
-                    <input
-                      ref={replyFileInputRef}
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={e => { addReplyFiles(e.target.files); e.target.value = ''; }}
-                    />
-                    {replyAttachments.length > 0 && (
-                      <span className={`ml-1 text-xs ${c.textSecondary}`}>
-                        {replyAttachments.length}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Reply attachments list */}
-                  {replyAttachments.length > 0 && (
-                    <div className={`px-3 py-2 border-b ${c.border} flex flex-wrap gap-1.5`}>
-                      {replyAttachments.map(att => (
-                        <div key={att.id} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg ${c.bgTertiary} border ${c.border} text-xs`}>
-                          <Attachment size={16} className={c.textSecondary} />
-                          <span className={`${c.text} max-w-[120px] truncate`}>{att.filename}</span>
-                          <span className={c.textSecondary}>({(att.size / 1024).toFixed(0)} KB)</span>
+                      {replyDragging && (
+                        <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg border-2 border-dashed border-ms-blue bg-ms-tint/70 pointer-events-none">
+                          <span className="flex items-center gap-2 text-ms-blue text-sm font-medium">
+                            <Attachment size={20} /> Dateien hier ablegen, um sie anzuhängen
+                          </span>
+                        </div>
+                      )}
+                      {/* Reply header */}
+                      <div className={`px-4 py-2 border-b ${s.border} flex items-center justify-between`}>
+                        <div className={`text-sm font-semibold ${s.text} flex items-center gap-2`}>
+                          {replyMode === 'replyAll' ? <ReplyAll size={16} /> : <Reply size={16} />}
+                          <span>{replyMode === 'replyAll' ? 'Allen antworten' : 'Antworten'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {replyError && <span className="text-xs text-ms-red">{replyError}</span>}
                           <button
-                            onClick={() => setReplyAttachments(prev => prev.filter(a => a.id !== att.id))}
-                            className={`${c.textSecondary} hover:text-red-400 transition-colors`}
+                            onClick={handleSendReply}
+                            disabled={replySending}
+                            className={`px-3 py-1.5 ${s.accentBg} ${s.accentHover} text-white rounded-md text-sm font-medium flex items-center gap-1.5 disabled:opacity-50`}
+                            title="Senden (⌘/Ctrl + Enter)"
+                          >
+                            {replySending ? <><InProgress size={16} className="animate-spin" /> Sende…</> : <><Send size={16} /> Senden</>}
+                          </button>
+                          <button
+                            onClick={closeReply}
+                            className={`p-1.5 ${s.hover} rounded-md ${s.textSecondary}`}
+                            title="Antwort schliessen"
+                            aria-label="Antwort schliessen"
                           >
                             <Close size={16} />
                           </button>
                         </div>
-                      ))}
+                      </div>
+
+                      {/* v6.9.1: Editierbare Empfänger mit Autocomplete */}
+                      <div className={`px-4 py-2 border-b ${s.border} space-y-1.5 ${s.bg}`}>
+                        <EmailTagInput label="An:" tags={replyToTags} onChange={setReplyToTags} placeholder="empfaenger@example.com" c={s} />
+                        {replyShowCc ? (
+                          <EmailTagInput label="CC:" tags={replyCcTags} onChange={setReplyCcTags} placeholder="cc@example.com" c={s} />
+                        ) : (
+                          <button onClick={() => setReplyShowCc(true)} className={`text-xs ${s.textSecondary} hover:underline ml-[76px]`}>
+                            + CC hinzufügen
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Formatting toolbar */}
+                      <div className={`flex items-center gap-1 px-3 py-1.5 border-b ${s.border} ${s.bg}`}>
+                        {[
+                          { cmd: 'bold',      label: <strong>B</strong>,  title: 'Fett (Ctrl+B)' },
+                          { cmd: 'italic',    label: <em>I</em>,           title: 'Kursiv (Ctrl+I)' },
+                          { cmd: 'underline', label: <span style={{textDecoration:'underline'}}>U</span>, title: 'Unterstrichen (Ctrl+U)' },
+                        ].map(btn => (
+                          <button
+                            key={btn.cmd}
+                            onMouseDown={e => { e.preventDefault(); replyEditorRef.current?.focus(); document.execCommand(btn.cmd, false, null); }}
+                            title={btn.title}
+                            className={`w-7 h-7 flex items-center justify-center rounded text-xs ${s.hover} ${s.text}`}
+                          >
+                            {btn.label}
+                          </button>
+                        ))}
+                        <div className={`w-px h-4 ${s.border} border-l mx-1`} />
+                        {[
+                          { cmd: 'insertUnorderedList', label: '•', title: 'Aufzählungsliste' },
+                          { cmd: 'insertOrderedList',   label: '1.', title: 'Nummerierte Liste' },
+                        ].map(btn => (
+                          <button
+                            key={btn.cmd}
+                            onMouseDown={e => { e.preventDefault(); replyEditorRef.current?.focus(); document.execCommand(btn.cmd, false, null); }}
+                            title={btn.title}
+                            className={`w-7 h-7 flex items-center justify-center rounded text-xs ${s.hover} ${s.text}`}
+                          >
+                            {btn.label}
+                          </button>
+                        ))}
+                        <div className={`w-px h-4 ${s.border} border-l mx-1`} />
+                        <button
+                          onMouseDown={e => { e.preventDefault(); replyEditorRef.current?.focus(); document.execCommand('removeFormat', false, null); }}
+                          title="Formatierung entfernen"
+                          className={`w-7 h-7 flex items-center justify-center rounded ${s.hover} ${s.textSecondary}`}
+                        >
+                          <Close size={16} />
+                        </button>
+                        <div className={`w-px h-4 ${s.border} border-l mx-1`} />
+                        <button
+                          onClick={() => replyFileInputRef.current?.click()}
+                          title="Anhang hinzufügen (oder Dateien ins Antwortfeld ziehen)"
+                          className={`h-7 px-2 flex items-center gap-1.5 rounded text-xs border ${s.border} ${s.hover} ${replyAttachments.length > 0 ? s.accent : s.text}`}
+                        >
+                          <Attachment size={16} /> Anhang
+                        </button>
+                        <input
+                          ref={replyFileInputRef}
+                          type="file"
+                          multiple
+                          className="hidden"
+                          onChange={e => { addReplyFiles(e.target.files); e.target.value = ''; }}
+                        />
+                        {replyAttachments.length > 0 && (
+                          <span className={`ml-1 text-xs ${s.textSecondary}`}>{replyAttachments.length}</span>
+                        )}
+                      </div>
+
+                      {/* Reply attachments list */}
+                      {replyAttachments.length > 0 && (
+                        <div className={`px-3 py-2 border-b ${s.border} flex flex-wrap gap-1.5 ${s.bg}`}>
+                          {replyAttachments.map(att => (
+                            <div key={att.id} className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${s.bgTertiary} border ${s.border} text-xs`}>
+                              <Attachment size={14} className={s.textSecondary} />
+                              <span className={`${s.text} max-w-[140px] truncate`}>{att.filename}</span>
+                              <span className={s.textSecondary}>({(att.size / 1024).toFixed(0)} KB)</span>
+                              <button
+                                onClick={() => setReplyAttachments(prev => prev.filter(a => a.id !== att.id))}
+                                className={`${s.textSecondary} hover:text-ms-red`}
+                                aria-label="Anhang entfernen"
+                              >
+                                <Close size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Reply editor — paste handler strips HTML to prevent XSS */}
+                      <div
+                        ref={replyEditorRef}
+                        contentEditable
+                        suppressContentEditableWarning
+                        className={`min-h-[120px] max-h-[260px] overflow-y-auto p-4 focus:outline-none ${s.text} ${s.bg}`}
+                        style={{ fontSize: '14px', lineHeight: '1.6' }}
+                        data-placeholder="Antwort schreiben…"
+                        onPaste={(e) => {
+                          e.preventDefault();
+                          // v7.3.0: Eingefügte Dateien (z.B. Screenshot) als Anhang übernehmen
+                          if (e.clipboardData.files?.length > 0) {
+                            addReplyFiles(e.clipboardData.files);
+                            return;
+                          }
+                          const text = e.clipboardData.getData('text/plain');
+                          document.execCommand('insertText', false, text);
+                        }}
+                      />
+
+                      {/* Quoted original email */}
+                      <div className={`mx-4 mb-3 pl-3 border-l-2 ${s.border} text-xs ${s.textSecondary} max-h-20 overflow-hidden`}>
+                        <p className="font-medium mb-1">
+                          Am {new Date(selectedEmail.date).toLocaleString('de-DE')} schrieb {displayNameOf(selectedEmail.from)}:
+                        </p>
+                        <div className="opacity-70 line-clamp-3">
+                          {selectedEmail.text?.slice(0, 200) || selectedEmail.html?.replace(/<[^>]*>/g, '').slice(0, 200)}
+                        </div>
+                      </div>
                     </div>
                   )}
 
-                  {/* Reply editor — paste handler strips HTML to prevent XSS */}
-                  <div
-                    ref={replyEditorRef}
-                    contentEditable
-                    suppressContentEditableWarning
-                    className={`min-h-[120px] max-h-[240px] overflow-y-auto p-4 focus:outline-none ${c.text}`}
-                    style={{ fontSize: '14px', lineHeight: '1.6' }}
-                    data-placeholder="Antwort schreiben..."
-                    onPaste={(e) => {
-                      e.preventDefault();
-                      // v7.3.0: Eingefügte Dateien (z.B. Screenshot) als Anhang übernehmen
-                      if (e.clipboardData.files?.length > 0) {
-                        addReplyFiles(e.clipboardData.files);
-                        return;
-                      }
-                      const text = e.clipboardData.getData('text/plain');
-                      document.execCommand('insertText', false, text);
-                    }}
-                  />
-
-                  {/* Quoted original email */}
-                  <div className={`mx-4 mb-3 pl-3 border-l-2 border-gray-500 text-xs ${c.textSecondary} max-h-20 overflow-hidden`}>
-                    <p className="font-medium mb-1">
-                      Am {new Date(selectedEmail.date).toLocaleString('de-DE')} schrieb {selectedEmail.from}:
-                    </p>
-                    <div className="opacity-70 line-clamp-3">
-                      {selectedEmail.text?.slice(0, 200) || selectedEmail.html?.replace(/<[^>]*>/g, '').slice(0, 200)}
-                    </div>
+                  {/* Inhalt — flex-shrink-0, damit das Antwort-Panel nichts staucht (v6.7.2) */}
+                  <div className="px-6 py-5 flex-shrink-0">
+                    {/* v7.2.0: Einladung zuoberst */}
+                    {selectedEmail.invitation && (
+                      <InvitationCard
+                        invitation={selectedEmail.invitation}
+                        account={invitationAccount}
+                        icsAttachment={calendarAttachment}
+                        icsState={calendarAttachment ? attachProgress[calendarAttachment.index] : null}
+                        onSaveIcs={() => calendarAttachment && saveAttachment(calendarAttachment, calendarAttachment.index, false)}
+                        onOpenIcs={() => calendarAttachment && saveAttachment(calendarAttachment, calendarAttachment.index, true)}
+                      />
+                    )}
+                    {/* v6.14.0: Anhänge über dem Mailtext — gut sichtbar, aber ruhig */}
+                    {visibleAttachments.length > 0 && (
+                      <div className="mb-5 rounded-lg border border-[#f2dd86] bg-[#fff8df] p-3">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-[#7a5a00] mb-2">
+                          <Attachment size={16} />
+                          {visibleAttachments.length === 1 ? '1 Anhang' : `${visibleAttachments.length} Anhänge`}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {visibleAttachments.map((att) => {
+                            const i = att.index;
+                            const prog = attachProgress[i];
+                            const hasContent = !!att.content;
+                            return (
+                              <div key={`${selectedEmail.uid}-${att.filename}-${i}`} className={`flex items-center gap-2 pl-3 pr-1.5 py-1.5 bg-white border ${s.border} rounded-md text-sm ${s.text}`}>
+                                <Attachment size={14} className={`flex-shrink-0 ${s.textSecondary}`} />
+                                <span className="truncate max-w-[260px]" title={att.filename}>{att.filename}</span>
+                                {att.size && <span className={`text-xs ${s.textSecondary}`}>{(att.size / 1024).toFixed(0)} KB</span>}
+                                {hasContent && (
+                                  <>
+                                    <button
+                                      onClick={() => saveAttachment(att, i, false)}
+                                      disabled={prog === 'saving'}
+                                      title="Speichern"
+                                      aria-label="Anhang speichern"
+                                      className={`p-1 rounded ${s.hover} ${s.accent} disabled:opacity-50`}
+                                    >
+                                      {prog === 'saving' ? <InProgress size={16} className="animate-spin" /> : prog === 'done' ? <CheckmarkFilled size={16} className="text-green-600" /> : <Download size={16} />}
+                                    </button>
+                                    <button
+                                      onClick={() => saveAttachment(att, i, true)}
+                                      disabled={prog === 'saving'}
+                                      title="Öffnen"
+                                      aria-label="Anhang öffnen"
+                                      className={`p-1 rounded ${s.hover} ${s.textSecondary} disabled:opacity-50`}
+                                    >
+                                      <FolderOpen size={16} />
+                                    </button>
+                                  </>
+                                )}
+                                {prog === 'error' && <span className="text-xs text-ms-red">Fehler</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {selectedEmail.html ? (
+                      <EmailHtmlFrame html={selectedEmail.html} fontFamily={previewFontStyle} />
+                    ) : (
+                      <div className={`${s.text} whitespace-pre-wrap text-sm leading-relaxed`} style={{ fontFamily: previewFontStyle }}>
+                        {selectedEmail.text}
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
-
-              {/* Email content — flex-shrink-0 damit Reply-Panel den Inhalt nicht
-                  zusammenstaucht und der Container scrollen kann (v6.7.2) */}
-              <div className="p-6 flex-shrink-0">
-                {/* v6.14.0: Anhänge ÜBER dem Mailtext in einem markanten Banner —
-                    vorher standen sie unter der Mail und waren ohne Scrollen
-                    unsichtbar (wurden dadurch leicht übersehen). */}
-                {/* v7.2.0: Einladung zuoberst — vorher steckten die Termindaten
-                    unlesbar im namenlosen .ics-Anhang. */}
-                {selectedEmail.invitation && (
-                  <InvitationCard
-                    invitation={selectedEmail.invitation}
-                    account={invitationAccount}
-                    icsAttachment={calendarAttachment}
-                    icsState={calendarAttachment ? attachProgress[calendarAttachment.index] : null}
-                    onSaveIcs={() => calendarAttachment && saveAttachment(calendarAttachment, calendarAttachment.index, false)}
-                    onOpenIcs={() => calendarAttachment && saveAttachment(calendarAttachment, calendarAttachment.index, true)}
-                  />
-                )}
-                {visibleAttachments.length > 0 && (
-                  <div className="mb-4 p-3 rounded-xl border border-amber-500/50 bg-amber-500/10">
-                    <h4 className="font-semibold text-amber-400 mb-2 flex items-center gap-2 text-sm">
-                      <Attachment size={18} />
-                      {visibleAttachments.length === 1
-                        ? '1 Anhang'
-                        : `${visibleAttachments.length} Anhänge`}
-                    </h4>
-                    <div className="flex flex-wrap gap-2">
-                      {visibleAttachments.map((att) => {
-                        const i = att.index;
-                        const prog = attachProgress[i];
-                        const hasContent = !!att.content;
-                        return (
-                          <div key={`${selectedEmail.uid}-${att.filename}-${i}`} className={`flex items-center gap-2 px-3 py-2 ${c.bgTertiary} ${c.border} border rounded-lg text-sm ${c.text}`}>
-                            <Attachment size={16} className="flex-shrink-0" />
-                            <span className="truncate">{att.filename}</span>
-                            {att.size && <span className={`text-xs ${c.textSecondary}`}>({(att.size / 1024).toFixed(1)} KB)</span>}
-                            {hasContent && (
-                              <>
-                                <button
-                                  onClick={() => saveAttachment(att, i, false)}
-                                  disabled={prog === 'saving'}
-                                  title="Speichern"
-                                  className={`p-1 rounded hover:bg-blue-500/20 text-blue-400 transition-colors disabled:opacity-50`}
-                                >
-                                  {prog === 'saving' ? <InProgress size={16} className="animate-spin" /> : prog === 'done' ? <CheckmarkFilled size={16} className="text-green-400" /> : <Download size={16} />}
-                                </button>
-                                <button
-                                  onClick={() => saveAttachment(att, i, true)}
-                                  disabled={prog === 'saving'}
-                                  title="Öffnen"
-                                  className={`p-1 rounded hover:bg-green-500/20 text-green-400 transition-colors disabled:opacity-50`}
-                                >
-                                  <FolderOpen size={16} />
-                                </button>
-                              </>
-                            )}
-                            {prog === 'error' && <span className="text-xs text-red-400">Fehler</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {selectedEmail.html ? (
-                  <EmailHtmlFrame html={selectedEmail.html} fontFamily={previewFontStyle} />
-                ) : (
-                  <pre className={`${c.text} whitespace-pre-wrap`} style={{ fontFamily: previewFontStyle }}>
-                    {selectedEmail.text}
-                  </pre>
-                )}
               </div>
+            </SheetTheme>
+          ) : (
+            <div className={`flex-1 flex flex-col items-center justify-center gap-2 ${c.textSecondary} px-6 text-center`}>
+              <Email size={40} className="opacity-30" />
+              <p className="text-sm">Keine E-Mail ausgewählt</p>
+              <p className="text-xs opacity-70">Wähle links eine Nachricht aus, um sie hier zu lesen.</p>
             </div>
-          </>
-        ) : (
-          <div className={`flex-1 flex items-center justify-center ${c.textSecondary}`}>
-            Wähle eine E-Mail aus
-          </div>
-        )}
+          )}
+        </div>
       </div>
-      
+
       {/* v6.8.1: Antwort-verwerfen-Bestätigung */}
       {confirmDiscardReply && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className={`${c.bgSecondary} ${c.border} border rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl`}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className={`${c.popover} ${c.border} border rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl`}>
             <h3 className={`text-lg font-semibold ${c.text} mb-2`}>Antwort verwerfen?</h3>
-            <p className={`text-sm ${c.textSecondary} mb-6`}>
-              Deine angefangene Antwort geht verloren.
-            </p>
+            <p className={`text-sm ${c.textSecondary} mb-6`}>Deine angefangene Antwort geht verloren.</p>
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setConfirmDiscardReply(false)}
-                className={`px-4 py-2 ${c.hover} ${c.border} border rounded-lg transition-colors ${c.text}`}
+                className={`px-4 py-2 ${c.hover} ${c.border} border rounded-md text-sm ${c.text}`}
                 autoFocus
               >
                 Weiter schreiben
@@ -3902,7 +3945,7 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
                   setReplyError(null);
                   if (replyEditorRef.current) replyEditorRef.current.innerHTML = '';
                 }}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors"
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-md text-sm"
               >
                 Verwerfen
               </button>
@@ -3913,15 +3956,15 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
 
       {/* v2.3.0: Delete Confirmation Modal — v6.8.1: auch für Einzel-Löschen */}
       {(showDeleteConfirm || confirmDeleteUid != null) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className={`${c.bgSecondary} ${c.border} border rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl`}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className={`${c.popover} ${c.border} border rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl`}>
             <div className="flex items-center gap-3 mb-4">
-              <div className="p-3 bg-red-500/20 rounded-full">
-                <TrashCan size={24} className="text-red-400" />
+              <div className="p-3 rounded-full" style={{ background: 'var(--cm-badge-red-bg)' }}>
+                <TrashCan size={24} className="text-ms-red" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3 className={`text-lg font-semibold ${c.text}`}>
-                  {confirmDeleteUid != null ? 'E-Mail löschen?' : 'E-Mails löschen?'}
+                  {confirmDeleteUid != null ? 'E-Mail endgültig löschen?' : 'E-Mails endgültig löschen?'}
                 </h3>
                 <p className={`text-sm ${c.textSecondary} truncate max-w-xs`}>
                   {confirmDeleteUid != null
@@ -3930,18 +3973,16 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
                 </p>
               </div>
             </div>
-
             <p className={`text-sm ${c.textSecondary} mb-6`}>
               {/* v6.10.0: Dialog erscheint nur noch im Papierkorb — dort ist Löschen endgültig */}
               {confirmDeleteUid != null
                 ? 'Die E-Mail wird endgültig gelöscht und kann nicht wiederhergestellt werden.'
                 : 'Die E-Mails werden endgültig gelöscht und können nicht wiederhergestellt werden.'}
             </p>
-
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => { setShowDeleteConfirm(false); setConfirmDeleteUid(null); }}
-                className={`px-4 py-2 ${c.hover} ${c.border} border rounded-lg transition-colors ${c.text}`}
+                className={`px-4 py-2 ${c.hover} ${c.border} border rounded-md text-sm ${c.text}`}
                 disabled={bulkDeleting}
                 autoFocus
               >
@@ -3950,25 +3991,14 @@ function InboxSplitView({ onFullView, onNavigate, onForward }) {
               <button
                 onClick={confirmDeleteUid != null ? confirmSingleDelete : handleBulkDelete}
                 disabled={bulkDeleting}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors flex items-center gap-2"
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-md text-sm flex items-center gap-2"
               >
-                {bulkDeleting ? (
-                  <>
-                    <InProgress size={16} className="animate-spin" />
-                    Lösche...
-                  </>
-                ) : (
-                  <>
-                    <TrashCan size={16} />
-                    Löschen
-                  </>
-                )}
+                {bulkDeleting ? <><InProgress size={16} className="animate-spin" /> Lösche…</> : <><TrashCan size={16} /> Löschen</>}
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
     </div>
   );
 }

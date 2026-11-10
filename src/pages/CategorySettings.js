@@ -175,7 +175,7 @@ function CategorySettings() {
                 <button
                   key={id}
                   onClick={() => { onChange(id); setShowIconPicker(null); }}
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:scale-110 ${value === id ? 'ring-2 ring-cyan-500 bg-cyan-500/20' : c.hover}`}
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:scale-110 ${value === id ? 'ring-2 ring-accent bg-accent/15' : c.hover}`}
                   title={name}
                 >
                   <Icon size={16} style={{ color: editingId ? editColor : newColor }} />
@@ -229,7 +229,7 @@ function CategorySettings() {
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="Kategoriename"
-                  className={`w-full px-4 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+                  className={`w-full px-4 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent`}
                   autoFocus
                 />
               </div>
@@ -337,7 +337,7 @@ function CategorySettings() {
                       type="text"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      className={`flex-1 px-4 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+                      className={`flex-1 px-4 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent`}
                       autoFocus
                     />
                     <button

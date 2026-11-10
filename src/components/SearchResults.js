@@ -37,7 +37,7 @@ export default function SearchResults({ results, isSearching, query, onSelectEma
     return (
       <>
         {text.substring(0, index)}
-        <mark className="bg-orange-500/40 text-white rounded px-0.5">
+        <mark className="rounded px-0.5" style={{ background: 'var(--cm-badge-amber-bg)', color: 'inherit', boxShadow: '0 0 0 1px var(--cm-badge-amber-bd)' }}>
           {text.substring(index, index + searchTerm.length)}
         </mark>
         {text.substring(index + searchTerm.length)}
@@ -76,7 +76,7 @@ export default function SearchResults({ results, isSearching, query, onSelectEma
         {matchedIn.map(field => (
           <span 
             key={field}
-            className="px-1.5 py-0.5 text-xs rounded bg-orange-500/20 text-orange-400"
+            className="cm-badge cm-badge-blue"
           >
             {labels[field] || field}
           </span>
@@ -89,7 +89,7 @@ export default function SearchResults({ results, isSearching, query, onSelectEma
   if (isSearching) {
     return (
       <div className="flex flex-col items-center justify-center py-16">
-        <InProgress size={32} className="text-orange-500 animate-spin mb-4" />
+        <InProgress size={32} className={`${c.accent} animate-spin mb-4`} />
         <p className={`${c.textSecondary}`}>Durchsuche alle Postfächer...</p>
         <p className={`${c.textSecondary} text-sm mt-1`}>Dies kann einige Sekunden dauern</p>
       </div>
@@ -119,7 +119,7 @@ export default function SearchResults({ results, isSearching, query, onSelectEma
   }
 
   return (
-    <div className="divide-y divide-gray-700/50">
+    <div className={`divide-y ${c.border.replace("border-", "divide-")}`}>
       {groupedResults.map(group => (
         <div key={group.accountId}>
           {/* Account Header */}
@@ -134,21 +134,21 @@ export default function SearchResults({ results, isSearching, query, onSelectEma
             <button
               key={`${email.uid}-${idx}`}
               onClick={() => onSelectEmail?.(email)}
-              className={`w-full px-4 py-3 text-left hover:bg-gray-700/30 transition-colors flex items-start gap-3 group`}
+              className={`w-full px-4 py-3 text-left ${c.hover} transition-colors flex items-start gap-3 group`}
             >
               {/* Read/Unread Icon */}
               <div className="pt-1 flex-shrink-0">
                 {email.seen ? (
                   <Email size={20} className={c.textSecondary} />
                 ) : (
-                  <Email size={20} className="text-orange-500" />
+                  <Email size={20} className={c.accent} />
                 )}
               </div>
 
               {/* Content */}
               <div className="flex-1 min-w-0">
                 {/* Subject */}
-                <div className={`${email.seen ? c.text : 'text-white font-medium'} truncate`}>
+                <div className={`${c.text} ${email.seen ? '' : 'font-semibold'} truncate`}>
                   {highlightText(email.subject, query)}
                 </div>
                 

@@ -92,7 +92,7 @@ function NotificationSettings() {
               <div 
                 onClick={() => saveSettings({ ...settings, notificationsEnabled: !settings.notificationsEnabled })}
                 className={`w-14 h-7 rounded-full transition-colors cursor-pointer ${
-                  settings.notificationsEnabled ? 'bg-cyan-500' : c.bgTertiary
+                  settings.notificationsEnabled ? 'bg-accentbg' : c.bgTertiary
                 }`}
               >
                 <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full transition-transform ${
@@ -119,7 +119,7 @@ function NotificationSettings() {
               <div 
                 onClick={() => saveSettings({ ...settings, notificationSound: !settings.notificationSound })}
                 className={`w-14 h-7 rounded-full transition-colors cursor-pointer ${
-                  settings.notificationSound ? 'bg-cyan-500' : c.bgTertiary
+                  settings.notificationSound ? 'bg-accentbg' : c.bgTertiary
                 }`}
               >
                 <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full transition-transform ${
@@ -169,7 +169,7 @@ function NotificationSettings() {
                   type="checkbox"
                   checked={settings.notifyForAccounts[account.id] ?? true}
                   onChange={() => toggleAccountNotification(account.id)}
-                  className="w-5 h-5 rounded accent-cyan-500"
+                  className="w-5 h-5 rounded accent-accentbg"
                 />
               </label>
             ))}
@@ -202,7 +202,7 @@ function NotificationSettings() {
                   type="checkbox"
                   checked={settings.notifyForCategories[category.id] ?? true}
                   onChange={() => toggleCategoryNotification(category.id)}
-                  className="w-5 h-5 rounded accent-cyan-500"
+                  className="w-5 h-5 rounded accent-accentbg"
                 />
               </label>
             ))}

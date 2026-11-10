@@ -14,7 +14,7 @@ const SCROLL_TO_H  = 7;  // default scroll position: 07:00
 const HOURS = Array.from({ length: DAY_END - DAY_START + 1 }, (_, i) => DAY_START + i);
 
 const SHOW_AS_COLORS = {
-  busy:             'bg-cyan-500',
+  busy:             'bg-accentbg',
   tentative:        'bg-yellow-500',
   free:             'bg-green-500',
   oof:              'bg-red-500',
@@ -107,7 +107,7 @@ const EventModal = memo(({ event, defaultDate, onSave, onDelete, onClose, c }) =
 
         <div className="space-y-3">
           <input type="text" placeholder="Titel" value={title} onChange={e => setTitle(e.target.value)} autoFocus
-            className={`w-full px-3 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg text-sm focus:outline-none focus:border-cyan-500`}/>
+            className={`w-full px-3 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg text-sm focus:outline-none focus:border-accent`}/>
 
           <div className="flex items-center gap-2">
             <input type="checkbox" id="allday" checked={isAllDay} onChange={e => setIsAllDay(e.target.checked)} className="rounded"/>
@@ -121,16 +121,16 @@ const EventModal = memo(({ event, defaultDate, onSave, onDelete, onClose, c }) =
                 <input type={isAllDay ? 'date' : 'datetime-local'}
                   value={idx === 0 ? start : end}
                   onChange={e => idx === 0 ? setStart(e.target.value) : setEnd(e.target.value)}
-                  className={`w-full px-2 py-1.5 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg text-xs focus:outline-none focus:border-cyan-500`}/>
+                  className={`w-full px-2 py-1.5 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg text-xs focus:outline-none focus:border-accent`}/>
               </div>
             ))}
           </div>
 
           <input type="text" placeholder="Ort (optional)" value={location} onChange={e => setLocation(e.target.value)}
-            className={`w-full px-3 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg text-sm focus:outline-none focus:border-cyan-500`}/>
+            className={`w-full px-3 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg text-sm focus:outline-none focus:border-accent`}/>
 
           <textarea placeholder="Notizen (optional)" value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-            className={`w-full px-3 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg text-sm focus:outline-none focus:border-cyan-500 resize-none`}/>
+            className={`w-full px-3 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-lg text-sm focus:outline-none focus:border-accent resize-none`}/>
         </div>
 
         <div className="flex items-center justify-between mt-4">
@@ -140,7 +140,7 @@ const EventModal = memo(({ event, defaultDate, onSave, onDelete, onClose, c }) =
           <div className="flex gap-2">
             <button onClick={onClose} className={`px-4 py-1.5 rounded-lg text-sm ${c.bgTertiary} ${c.text} ${c.hover}`}>Abbrechen</button>
             <button onClick={handleSave} disabled={saving || !title.trim()}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm bg-cyan-500 hover:bg-cyan-600 text-white disabled:opacity-50">
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm bg-accentbg hover:bg-accentbghover text-white disabled:opacity-50">
               {saving ? '…' : <><Checkmark size={16} /> Speichern</>}
             </button>
           </div>
@@ -184,14 +184,14 @@ const MonthView = memo(({ year, month, events, today, onDayClick, onEventClick, 
             <div key={idx}
               onClick={() => onDayClick(cell.date)}
               className={`min-h-[90px] p-1 border-b border-r ${c.border} cursor-pointer transition-colors ${cell.current ? c.hover : 'opacity-40'}`}>
-              <div className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full mb-1 ${isToday ? 'bg-cyan-500 text-white' : c.textSecondary}`}>
+              <div className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full mb-1 ${isToday ? 'bg-accentbg text-white' : c.textSecondary}`}>
                 {cell.date.getDate()}
               </div>
               <div className="space-y-0.5 overflow-hidden">
                 {dayEvts.slice(0,3).map(e => (
                   <div key={e.id} onClick={ev => { ev.stopPropagation(); onEventClick(e); }}
                     title={e.title}
-                    className={`text-xs px-1.5 py-0.5 rounded truncate text-white cursor-pointer hover:opacity-80 ${SHOW_AS_COLORS[e.showAs] || 'bg-cyan-500'}`}>
+                    className={`text-xs px-1.5 py-0.5 rounded truncate text-white cursor-pointer hover:opacity-80 ${SHOW_AS_COLORS[e.showAs] || 'bg-accentbg'}`}>
                     {!e.isAllDay && <span className="opacity-80 mr-1">{formatTime(e.start)}</span>}
                     {e.title}
                   </div>
@@ -240,11 +240,11 @@ const WeekView = memo(({ weekStart, events, today, onSlotClick, onEventClick, c 
             <div key={di} className={`flex-1 min-h-[28px] border-r ${c.border} last:border-r-0 px-0.5 py-0.5`}>
               {allDay.map(e => (
                 <div key={e.id} onClick={() => onEventClick(e)}
-                  className={`text-xs px-1 py-0.5 rounded truncate text-white cursor-pointer mb-0.5 ${SHOW_AS_COLORS[e.showAs]||'bg-cyan-500'}`}>
+                  className={`text-xs px-1 py-0.5 rounded truncate text-white cursor-pointer mb-0.5 ${SHOW_AS_COLORS[e.showAs]||'bg-accentbg'}`}>
                   {e.title}
                 </div>
               ))}
-              <div className={`text-xs font-medium text-center py-0.5 ${isToday ? 'text-cyan-400' : c.textSecondary}`}>
+              <div className={`text-xs font-medium text-center py-0.5 ${isToday ? 'text-accent' : c.textSecondary}`}>
                 {WEEKDAYS_SHORT[di]} {day.getDate()}
               </div>
             </div>
@@ -269,7 +269,7 @@ const WeekView = memo(({ weekStart, events, today, onSlotClick, onEventClick, c 
             const isToday = isSameDay(day, today);
             const dayEvts = getEventsForDay(day);
             return (
-              <div key={di} className={`flex-1 relative border-r ${c.border} last:border-r-0 ${isToday ? 'bg-cyan-500/5' : ''}`}>
+              <div key={di} className={`flex-1 relative border-r ${c.border} last:border-r-0 ${isToday ? 'bg-accent/10' : ''}`}>
                 {HOURS.map(h => (
                   <div key={h} style={{ height: HOUR_HEIGHT }}
                     className={`border-b ${c.border} cursor-pointer hover:bg-white/5`}
@@ -282,7 +282,7 @@ const WeekView = memo(({ weekStart, events, today, onSlotClick, onEventClick, c 
                 ))}
                 {dayEvts.map(e => (
                   <div key={e.id} style={eventStyle(e)} onClick={() => onEventClick(e)}
-                    className={`text-xs text-white rounded px-1 py-0.5 overflow-hidden cursor-pointer hover:opacity-80 z-10 ${SHOW_AS_COLORS[e.showAs]||'bg-cyan-500'}`}>
+                    className={`text-xs text-white rounded px-1 py-0.5 overflow-hidden cursor-pointer hover:opacity-80 z-10 ${SHOW_AS_COLORS[e.showAs]||'bg-accentbg'}`}>
                     <div className="font-medium truncate">{e.title}</div>
                     <div className="opacity-80 truncate">{formatTime(e.start)}–{formatTime(e.end)}</div>
                     {e.location && <div className="opacity-70 truncate flex items-center gap-0.5"><Location size={16} />{e.location}</div>}
@@ -325,12 +325,12 @@ const DayView = memo(({ date, events, today, onSlotClick, onEventClick, c }) => 
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
       <div className={`border-b ${c.border} flex-shrink-0 px-4 py-2`}>
-        <div className={`text-base font-semibold ${isToday ? 'text-cyan-400' : c.text}`}>
+        <div className={`text-base font-semibold ${isToday ? 'text-accent' : c.text}`}>
           {WEEKDAYS_LONG[((date.getDay() + 6) % 7)]}, {date.getDate()}. {MONTHS[date.getMonth()]} {date.getFullYear()}
         </div>
         {allDayEvts.map(e => (
           <div key={e.id} onClick={() => onEventClick(e)}
-            className={`mt-1 text-xs px-2 py-0.5 rounded text-white inline-block cursor-pointer mr-1 ${SHOW_AS_COLORS[e.showAs]||'bg-cyan-500'}`}>
+            className={`mt-1 text-xs px-2 py-0.5 rounded text-white inline-block cursor-pointer mr-1 ${SHOW_AS_COLORS[e.showAs]||'bg-accentbg'}`}>
             {e.title}
           </div>
         ))}
@@ -346,7 +346,7 @@ const DayView = memo(({ date, events, today, onSlotClick, onEventClick, c }) => 
               </div>
             ))}
           </div>
-          <div className={`flex-1 relative ${isToday ? 'bg-cyan-500/5' : ''}`}>
+          <div className={`flex-1 relative ${isToday ? 'bg-accent/10' : ''}`}>
             {HOURS.map(h => (
               <div key={h} style={{ height: HOUR_HEIGHT }}
                 className={`border-b ${c.border} cursor-pointer hover:bg-white/5`}
@@ -355,7 +355,7 @@ const DayView = memo(({ date, events, today, onSlotClick, onEventClick, c }) => 
             ))}
             {dayEvts.map(e => (
               <div key={e.id} style={eventStyle(e)} onClick={() => onEventClick(e)}
-                className={`text-xs text-white rounded px-2 py-1 overflow-hidden cursor-pointer hover:opacity-80 z-10 ${SHOW_AS_COLORS[e.showAs]||'bg-cyan-500'}`}>
+                className={`text-xs text-white rounded px-2 py-1 overflow-hidden cursor-pointer hover:opacity-80 z-10 ${SHOW_AS_COLORS[e.showAs]||'bg-accentbg'}`}>
                 <div className="font-medium">{e.title}</div>
                 <div className="opacity-80">{formatTime(e.start)} – {formatTime(e.end)}</div>
                 {e.location && <div className="opacity-70 flex items-center gap-1"><Location size={16} />{e.location}</div>}
@@ -517,7 +517,7 @@ export default function CalendarView() {
         <div className={`flex rounded-lg overflow-hidden border ${c.border}`}>
           {[['day','Tag'],['week','Woche'],['month','Monat']].map(([id, label]) => (
             <button key={id} onClick={() => setViewMode(id)}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === id ? 'bg-cyan-500 text-white' : `${c.bgTertiary} ${c.textSecondary} ${c.hover}`}`}>
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === id ? 'bg-accentbg text-white' : `${c.bgTertiary} ${c.textSecondary} ${c.hover}`}`}>
               {label}
             </button>
           ))}
@@ -533,7 +533,7 @@ export default function CalendarView() {
           )}
           {loading && <span className={`text-xs ${c.textSecondary} animate-pulse`}>Lade…</span>}
           <button onClick={() => { setDefaultDate(viewDate); setEditEvent({}); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-cyan-500 hover:bg-cyan-600 text-white">
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-accentbg hover:bg-accentbghover text-white">
             <Add size={16} /> Neuer Termin
           </button>
         </div>

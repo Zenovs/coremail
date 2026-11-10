@@ -2,9 +2,8 @@ import React, { useState, useEffect, useCallback, Component, useRef } from 'reac
 import { WarningFilled, WarningAlt, Close, CloudOffline } from '@carbon/icons-react';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { AccountProvider, useAccounts, useAccountStats } from './context/AccountContext';
-import { SidebarProvider } from './context/SidebarContext';
 import { SearchProvider, useSearch } from './context/SearchContext';
-import SidebarV2 from './components/SidebarV2';
+import AppRail from './components/AppRail';
 import GlobalSearch from './components/GlobalSearch';
 import UpdateNotification from './components/UpdateNotification';
 import InboxSplitView from './pages/InboxSplitView';
@@ -33,15 +32,15 @@ class ErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#1a1a1a', color: '#e5e7eb', padding: '32px' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--cm-bg)', color: 'var(--cm-text)', padding: '32px' }}>
           <WarningFilled size={48} style={{ marginBottom: '16px', color: '#f59e0b' }} />
           <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px' }}>Ansicht konnte nicht geladen werden</h2>
-          <p style={{ fontSize: '14px', color: '#9ca3af', marginBottom: '24px', textAlign: 'center', maxWidth: '400px' }}>
+          <p style={{ fontSize: '14px', opacity: 0.7, marginBottom: '24px', textAlign: 'center', maxWidth: '400px' }}>
             {this.state.error?.message || 'Unbekannter Fehler'}
           </p>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}
-            style={{ padding: '8px 20px', background: '#0891b2', color: 'white', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '14px' }}
+            style={{ padding: '8px 20px', background: '#0f6cbd', color: 'white', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}
           >
             Erneut versuchen
           </button>
@@ -319,7 +318,7 @@ function AppContent() {
         </div>
       )}
       {syncErrorToast && (
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 px-4 py-3 bg-red-900/90 border border-red-500/40 text-red-200 text-sm rounded-xl shadow-lg max-w-sm">
+        <div className="fixed bottom-4 right-4 z-50 cm-banner cm-banner-red shadow-lg max-w-sm">
           <WarningAlt size={16} />
           <span>Sync fehlgeschlagen für <strong>{syncErrorToast.accountName}</strong></span>
           <button onClick={() => setSyncErrorToast(null)} className="ml-auto opacity-60 hover:opacity-100"><Close size={16} /></button>
@@ -327,7 +326,7 @@ function AppContent() {
       )}
       <ErrorBoundary>
       <div className="flex flex-1 overflow-hidden min-h-0">
-      <SidebarV2 currentView={currentView} onNavigate={setCurrentView} />
+      <AppRail currentView={currentView} onNavigate={setCurrentView} />
       <main className="flex-1 flex flex-col overflow-hidden min-h-0">
         {/* key={currentView}: Boundary beim Seitenwechsel neu mounten — sonst
             blieb nach einem Crash (z.B. Mail-Regeln) JEDE danach angeklickte
@@ -365,12 +364,10 @@ function App() {
   return (
     <ThemeProvider>
       <AccountProvider>
-        <SidebarProvider>
-          <SearchProvider>
-            <UnreadBadgeSync />
-            <AppContent />
-          </SearchProvider>
-        </SidebarProvider>
+        <SearchProvider>
+          <UnreadBadgeSync />
+          <AppContent />
+        </SearchProvider>
       </AccountProvider>
     </ThemeProvider>
   );

@@ -397,7 +397,7 @@ function SignatureEditor() {
                 <div
                   onClick={() => setEnabled(!accountSignatures.enabled)}
                   className={`w-14 h-7 rounded-full transition-colors cursor-pointer ${
-                    accountSignatures.enabled ? 'bg-cyan-500' : c.bgTertiary
+                    accountSignatures.enabled ? 'bg-accentbg' : c.bgTertiary
                   }`}
                 >
                   <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full transition-transform ${
@@ -420,7 +420,7 @@ function SignatureEditor() {
                   <div
                     key={item.id}
                     className={`flex items-center gap-2 p-3 rounded-lg border transition-colors cursor-pointer ${
-                      isActive ? `${c.accentBorder || 'border-cyan-500'} ${c.bgTertiary}` : `${c.border} ${c.hover}`
+                      isActive ? `${c.accentBorder || 'border-accent'} ${c.bgTertiary}` : `${c.border} ${c.hover}`
                     }`}
                     onClick={() => setActiveSignatureId(item.id)}
                   >
@@ -428,7 +428,7 @@ function SignatureEditor() {
                       <div className="flex items-center gap-2">
                         <span className={`font-medium ${c.text} truncate`}>{item.name || 'Unbenannt'}</span>
                         {isDefault && (
-                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400">
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-accent/15 text-accent">
                             <StarFilled size={12} /> Standard
                           </span>
                         )}
@@ -442,7 +442,7 @@ function SignatureEditor() {
                         <button
                           onClick={(e) => { e.stopPropagation(); setAsDefault(item.id); }}
                           title="Als Standard setzen"
-                          className={`p-2 ${c.hover} rounded text-gray-400 hover:text-cyan-400`}
+                          className={`p-2 ${c.hover} rounded text-gray-400 hover:text-accent`}
                         >
                           <Star size={16} />
                         </button>
@@ -482,7 +482,7 @@ function SignatureEditor() {
                     value={activeItem.name}
                     onChange={(e) => updateActiveItem({ name: e.target.value })}
                     placeholder="Name der Signatur"
-                    className={`flex-1 min-w-0 px-3 py-1.5 ${c.input} border ${c.border} rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+                    className={`flex-1 min-w-0 px-3 py-1.5 ${c.input} border ${c.border} rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent`}
                   />
                 </div>
                 <div className="flex gap-1">
@@ -510,7 +510,7 @@ function SignatureEditor() {
                     value={activeItem.html || ''}
                     onChange={handleHtmlCodeChange}
                     spellCheck={false}
-                    className={`w-full min-h-[200px] p-4 font-mono text-sm ${c.input} border ${c.border} rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 resize-y`}
+                    className={`w-full min-h-[200px] p-4 font-mono text-sm ${c.input} border ${c.border} rounded-lg focus:outline-none focus:ring-2 focus:ring-accent resize-y`}
                     placeholder="<p>HTML hier eingeben...</p>"
                   />
                 </div>
@@ -562,7 +562,7 @@ function SignatureEditor() {
                     ref={editorRef}
                     contentEditable
                     onInput={updateContentFromEditor}
-                    className={`min-h-[200px] p-4 ${c.input} border ${c.border} ${showPlaceholderHelp ? '' : 'border-t-0'} rounded-b-lg focus:outline-none focus:ring-2 focus:ring-cyan-500`}
+                    className={`min-h-[200px] p-4 ${c.input} border ${c.border} ${showPlaceholderHelp ? '' : 'border-t-0'} rounded-b-lg focus:outline-none focus:ring-2 focus:ring-accent`}
                     style={{ color: 'white' }}
                   />
                 </>

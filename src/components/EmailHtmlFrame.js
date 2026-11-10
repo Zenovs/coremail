@@ -88,8 +88,10 @@ function EmailHtmlFrame({ html, fontFamily }) {
 <style>
   html, body {
     margin: 0;
-    padding: 16px;
+    padding: 4px 0 16px 0;
     font-family: ${font};
+    font-size: 14px;
+    line-height: 1.5;
     word-break: break-word;
     overflow-x: hidden;
     background: white;
@@ -102,7 +104,7 @@ function EmailHtmlFrame({ html, fontFamily }) {
     min-width: 32px;
     min-height: 32px;
   }
-  a { color: #0891b2; }
+  a { color: #0f6cbd; }
   pre, code { white-space: pre-wrap; word-break: break-all; }
 </style>
 </head>
@@ -116,7 +118,7 @@ function EmailHtmlFrame({ html, fontFamily }) {
       const doc = iframe.contentDocument;
       const body = doc?.body;
       if (body) {
-        iframe.style.height = (body.scrollHeight + 32) + 'px';
+        iframe.style.height = (body.scrollHeight + 8) + 'px';
 
         // Links im Browser öffnen statt im iframe navigieren.
         // Event-Delegation statt once:true — sonst navigierte ein zweiter Klick
@@ -160,10 +162,10 @@ function EmailHtmlFrame({ html, fontFamily }) {
       {blockedImageCount > 0 && !imagesAllowed && (
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: '12px', padding: '8px 14px', marginBottom: '8px',
-          background: 'rgba(234, 179, 8, 0.10)',
-          border: '1px solid rgba(234, 179, 8, 0.30)',
-          borderRadius: '8px', fontSize: '13px', color: '#fbbf24'
+          gap: '12px', padding: '8px 14px', marginBottom: '12px',
+          background: '#fff4ce',
+          border: '1px solid #f2dd86',
+          borderRadius: '8px', fontSize: '13px', color: '#7a5a00'
         }}>
           <span>
             <strong>{blockedImageCount}</strong> externe{blockedImageCount === 1 ? 's' : ''} Bild{blockedImageCount === 1 ? '' : 'er'} blockiert (Tracking-Schutz)
@@ -171,11 +173,11 @@ function EmailHtmlFrame({ html, fontFamily }) {
           <button
             onClick={() => setImagesAllowed(true)}
             style={{
-              background: 'rgba(234, 179, 8, 0.20)',
-              border: '1px solid rgba(234, 179, 8, 0.50)',
-              color: '#fbbf24', borderRadius: '6px',
+              background: '#ffffff',
+              border: '1px solid #d1d1d1',
+              color: '#242424', borderRadius: '6px',
               padding: '4px 12px', cursor: 'pointer', fontSize: '12px',
-              fontFamily: 'inherit'
+              fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap'
             }}
           >
             Bilder anzeigen
@@ -190,9 +192,8 @@ function EmailHtmlFrame({ html, fontFamily }) {
         style={{
           width: '100%',
           border: 'none',
-          minHeight: '200px',
+          minHeight: '120px',
           display: 'block',
-          borderRadius: '8px',
           background: 'white',
         }}
         onLoad={handleLoad}

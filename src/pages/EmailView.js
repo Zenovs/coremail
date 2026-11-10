@@ -5,7 +5,7 @@ import {
   Image, DocumentPdf, DocumentBlank, Music, Video, Box, NotificationOff, Bot, Archive
 } from '@carbon/icons-react';
 import Attachment from '../components/PaperclipIcon';
-import { useTheme } from '../context/ThemeContext';
+import { useTheme, SheetTheme, SHEET_COLORS } from '../context/ThemeContext';
 import { useAccounts } from '../context/AccountContext';
 import MailApi from '../services/MailApi';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -45,6 +45,7 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
   const c = currentTheme.colors;
+  const s = SHEET_COLORS; // v8.0: Mailinhalt liegt in jedem Theme auf einem weissen Blatt
 
   const handleGenerateDraft = async () => {
     if (!window.electronAPI?.aiSmartCompose) {
@@ -381,7 +382,7 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
         <p className={`${c.textSecondary} text-center max-w-md mb-4`}>{error}</p>
         <button
           onClick={onBack}
-          className={`px-4 py-2 ${c.bgTertiary} ${c.hover} ${c.text} rounded-lg transition-colors`}
+          className={`px-4 py-2 ${c.accentBg} ${c.accentHover} text-white rounded-md text-sm font-medium transition-colors`}
         >
           Zurück zum Posteingang
         </button>
@@ -393,131 +394,93 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
 
   return (
     <div className={`flex-1 flex flex-col overflow-hidden ${c.bg}`}>
-      {/* Header with Actions */}
-      <header className={`px-6 py-4 ${c.border} border-b ${c.bgSecondary}`}>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onBack}
-            className={`p-2 ${c.hover} rounded-lg transition-colors ${c.textSecondary} hover:${c.text}`}
-            title="Zurück"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <div className="flex-1">
-            <h2 className={`text-lg font-semibold ${c.text} truncate`}>
-              {fullEmail.subject}
-            </h2>
-          </div>
-          
-          {/* Action Buttons */}
-          <div className="flex items-center gap-1">
-            {/* v6.10.0: Archivieren */}
-            <button
-              onClick={handleArchive}
-              disabled={actionLoading === 'archive'}
-              className={`p-2 ${c.hover} rounded-lg transition-colors ${c.textSecondary} hover:${c.text}`}
-              title="Archivieren"
-              aria-label="Archivieren"
-            >
-              {actionLoading === 'archive' ? (
-                <InProgress size={20} className="animate-spin" />
-              ) : (
-                <Archive size={20} />
-              )}
-            </button>
-            {/* Delete — v6.8.1: mit Bestätigung; v6.10.0: Bestätigung nur im
-                Papierkorb (endgültig), sonst direkt in den Papierkorb */}
-            <button
-              onClick={() => (isInTrashFolder ? setShowDeleteConfirm(true) : handleDelete())}
-              disabled={actionLoading === 'delete'}
-              className={`p-2 ${c.hover} rounded-lg transition-colors text-red-400 hover:text-red-300 hover:bg-red-900/20`}
-              title="Löschen"
-              aria-label="Löschen"
-            >
-              {actionLoading === 'delete' ? (
-                <InProgress size={20} className="animate-spin" />
-              ) : (
-                <TrashCan size={20} />
-              )}
-            </button>
-            
-            {/* Mark Read/Unread */}
-            <button
-              onClick={handleToggleRead}
-              disabled={actionLoading === 'read'}
-              className={`p-2 ${c.hover} rounded-lg transition-colors ${c.textSecondary} hover:${c.text}`}
-              title={isRead ? 'Als ungelesen markieren' : 'Als gelesen markieren'}
-            >
-              {actionLoading === 'read' ? (
-                <InProgress size={20} className="animate-spin" />
-              ) : isRead ? (
-                <EmailNew size={20} />
-              ) : (
-                <Email size={20} />
-              )}
-            </button>
-
-            <div className={`w-px h-6 ${c.border} mx-2`} />
-
-            {/* Reply */}
-            <button
-              onClick={handleReply}
-              className={`p-2 ${c.hover} rounded-lg transition-colors ${c.textSecondary} hover:${c.accent}`}
-              title="Antworten"
-            >
-              <Reply size={20} />
-            </button>
-            
-            {/* Reply All */}
-            <button
-              onClick={handleReplyAll}
-              className={`p-2 ${c.hover} rounded-lg transition-colors ${c.textSecondary} hover:${c.accent}`}
-              title="Allen antworten"
-            >
-              <ReplyAll size={20} />
-            </button>
-            
-            {/* Forward */}
-            <button
-              onClick={handleForward}
-              className={`p-2 ${c.hover} rounded-lg transition-colors ${c.textSecondary} hover:${c.accent}`}
-              title="Weiterleiten"
-            >
-              <SendAlt size={20} />
-            </button>
-
-            {/* v6.6.0: AI Antwort vorschlagen */}
-            <button
-              onClick={() => setAiOpen(v => !v)}
-              className={`p-2 rounded-lg transition-colors ${aiOpen ? c.accentBg + ' text-white' : `${c.hover} ${c.textSecondary} hover:${c.accent}`}`}
-              title="Antwort vorschlagen (AI)"
-            >
-              <Bot size={20} />
-            </button>
-
-          </div>
-        </div>
+      {/* Kopfleiste (v8.0): wie die Kommandoleiste im Posteingang */}
+      <header className={`h-12 flex-shrink-0 px-2 ${c.border} border-b ${c.bgSecondary} flex items-center gap-0.5`} role="toolbar" aria-label="Aktionen">
+        <button onClick={onBack} className={`cm-cmd ${c.text} ${c.hover}`} title="Zurück zur Liste">
+          <ArrowLeft size={18} className={c.textSecondary} />
+          <span className="hidden xl:inline">Zurück</span>
+        </button>
+        <div className={`w-px h-6 mx-2 ${c.border} border-l`} />
+        <button
+          onClick={() => (isInTrashFolder ? setShowDeleteConfirm(true) : handleDelete())}
+          disabled={actionLoading === 'delete'}
+          className={`cm-cmd ${c.text} ${c.hover} hover:text-ms-red`}
+          title="Löschen"
+          aria-label="Löschen"
+        >
+          {actionLoading === 'delete' ? <InProgress size={18} className="animate-spin" /> : <TrashCan size={18} className={c.textSecondary} />}
+          <span className="hidden xl:inline">Löschen</span>
+        </button>
+        <button
+          onClick={handleArchive}
+          disabled={actionLoading === 'archive'}
+          className={`cm-cmd ${c.text} ${c.hover}`}
+          title="Archivieren"
+          aria-label="Archivieren"
+        >
+          {actionLoading === 'archive' ? <InProgress size={18} className="animate-spin" /> : <Archive size={18} className={c.textSecondary} />}
+          <span className="hidden xl:inline">Archivieren</span>
+        </button>
+        <div className={`w-px h-6 mx-2 ${c.border} border-l`} />
+        <button onClick={handleReply} className={`cm-cmd ${c.text} ${c.hover}`} title="Antworten">
+          <Reply size={18} className={c.textSecondary} />
+          <span className="hidden xl:inline">Antworten</span>
+        </button>
+        <button onClick={handleReplyAll} className={`cm-cmd ${c.text} ${c.hover}`} title="Allen antworten">
+          <ReplyAll size={18} className={c.textSecondary} />
+          <span className="hidden xl:inline">Allen antworten</span>
+        </button>
+        <button onClick={handleForward} className={`cm-cmd ${c.text} ${c.hover}`} title="Weiterleiten">
+          <SendAlt size={18} className={c.textSecondary} />
+          <span className="hidden xl:inline">Weiterleiten</span>
+        </button>
+        <div className={`w-px h-6 mx-2 ${c.border} border-l`} />
+        <button
+          onClick={handleToggleRead}
+          disabled={actionLoading === 'read'}
+          className={`cm-cmd ${c.text} ${c.hover}`}
+          title={isRead ? 'Als ungelesen markieren' : 'Als gelesen markieren'}
+        >
+          {actionLoading === 'read'
+            ? <InProgress size={18} className="animate-spin" />
+            : isRead ? <EmailNew size={18} className={c.textSecondary} /> : <Email size={18} className={c.textSecondary} />}
+          <span className="hidden xl:inline">{isRead ? 'Als ungelesen' : 'Als gelesen'}</span>
+        </button>
+        {/* v6.6.0: AI Antwort vorschlagen */}
+        <button
+          onClick={() => setAiOpen(v => !v)}
+          className={`cm-cmd ${aiOpen ? `${c.selected} ${c.accent}` : `${c.text} ${c.hover}`}`}
+          title="Antwort vorschlagen (KI)"
+          aria-pressed={aiOpen}
+        >
+          <Bot size={18} className={aiOpen ? '' : c.textSecondary} />
+          <span className="hidden xl:inline">KI-Antwort</span>
+        </button>
       </header>
 
+      <SheetTheme>
+        <div className="cm-sheet flex-1 flex flex-col overflow-hidden min-h-0">
+          <div className="flex-1 overflow-y-auto">
+            <div className="max-w-5xl mx-auto px-8 py-6">
       {/* v6.6.0: Smart-Compose Panel */}
       {aiOpen && (
-        <div className={`mx-6 mt-4 px-4 py-3 rounded-lg ${c.bgSecondary} ${c.border} border`}>
+        <div className={`mb-4 px-4 py-3 rounded-lg ${s.bgSecondary} ${s.border} border`}>
           <div className="flex items-center justify-between mb-3">
-            <h3 className={`text-sm font-medium ${c.text} flex items-center gap-2`}>
-              <Bot size={16} className={c.accent} /> Antwort vorschlagen
+            <h3 className={`text-sm font-medium ${s.text} flex items-center gap-2`}>
+              <Bot size={16} className={s.accent} /> Antwort vorschlagen
             </h3>
-            <button onClick={() => { setAiOpen(false); setAiDraft(null); setAiError(null); }} className={`p-1 ${c.hover} rounded ${c.textSecondary}`}>
+            <button onClick={() => { setAiOpen(false); setAiDraft(null); setAiError(null); }} className={`p-1 ${s.hover} rounded ${s.textSecondary}`}>
               <Close size={16} />
             </button>
           </div>
 
           <div className="grid grid-cols-3 gap-2 mb-3">
             <div>
-              <label className={`block text-xs ${c.textSecondary} mb-1`}>Absicht</label>
+              <label className={`block text-xs ${s.textSecondary} mb-1`}>Absicht</label>
               <select
                 value={aiIntent}
                 onChange={(e) => setAiIntent(e.target.value)}
-                className={`w-full px-2 py-1.5 ${c.bgTertiary} ${c.text} ${c.border} border rounded-md text-sm outline-none`}
+                className={`w-full px-2 py-1.5 ${s.bgTertiary} ${s.text} ${s.border} border rounded-md text-sm outline-none`}
               >
                 <option value="custom">Frei</option>
                 <option value="accept">Zusagen</option>
@@ -528,11 +491,11 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
               </select>
             </div>
             <div>
-              <label className={`block text-xs ${c.textSecondary} mb-1`}>Tonfall</label>
+              <label className={`block text-xs ${s.textSecondary} mb-1`}>Tonfall</label>
               <select
                 value={aiTone}
                 onChange={(e) => setAiTone(e.target.value)}
-                className={`w-full px-2 py-1.5 ${c.bgTertiary} ${c.text} ${c.border} border rounded-md text-sm outline-none`}
+                className={`w-full px-2 py-1.5 ${s.bgTertiary} ${s.text} ${s.border} border rounded-md text-sm outline-none`}
               >
                 <option value="formal">Formell</option>
                 <option value="neutral">Neutral</option>
@@ -540,11 +503,11 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
               </select>
             </div>
             <div>
-              <label className={`block text-xs ${c.textSecondary} mb-1`}>Länge</label>
+              <label className={`block text-xs ${s.textSecondary} mb-1`}>Länge</label>
               <select
                 value={aiLength}
                 onChange={(e) => setAiLength(e.target.value)}
-                className={`w-full px-2 py-1.5 ${c.bgTertiary} ${c.text} ${c.border} border rounded-md text-sm outline-none`}
+                className={`w-full px-2 py-1.5 ${s.bgTertiary} ${s.text} ${s.border} border rounded-md text-sm outline-none`}
               >
                 <option value="short">Kurz</option>
                 <option value="medium">Mittel</option>
@@ -558,20 +521,20 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
             value={aiHint}
             onChange={(e) => setAiHint(e.target.value)}
             placeholder="Optional: Hinweis (z.B. 'Termin am Donnerstag 14h zusagen')"
-            className={`w-full px-3 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-md text-sm outline-none mb-3`}
+            className={`w-full px-3 py-2 ${s.bgTertiary} ${s.text} ${s.border} border rounded-md text-sm outline-none mb-3`}
           />
 
           <button
             onClick={handleGenerateDraft}
             disabled={aiLoading}
-            className={`px-3 py-1.5 ${c.accentBg} ${c.accentHover} text-white text-sm rounded-lg flex items-center gap-2 disabled:opacity-50`}
+            className={`px-3 py-1.5 ${s.accentBg} ${s.accentHover} text-white text-sm rounded-md font-medium flex items-center gap-2 disabled:opacity-50`}
           >
             {aiLoading ? <InProgress size={14} className="animate-spin" /> : <Bot size={14} />}
             {aiLoading ? 'Generiere…' : (aiDraft ? 'Neu generieren' : 'Vorschlag generieren')}
           </button>
 
           {aiError && (
-            <div className="mt-3 p-2 rounded-md bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{aiError}</div>
+            <div className="mt-3 p-2 cm-banner cm-banner-red text-sm">{aiError}</div>
           )}
 
           {aiDraft && (
@@ -580,10 +543,10 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
                 value={aiDraft.draft}
                 onChange={(e) => setAiDraft({ ...aiDraft, draft: e.target.value })}
                 rows={Math.min(15, Math.max(5, (aiDraft.draft.match(/\n/g) || []).length + 2))}
-                className={`w-full px-3 py-2 ${c.bgTertiary} ${c.text} ${c.border} border rounded-md text-sm outline-none font-sans resize-y whitespace-pre-wrap`}
+                className={`w-full px-3 py-2 ${s.bgTertiary} ${s.text} ${s.border} border rounded-md text-sm outline-none font-sans resize-y whitespace-pre-wrap`}
               />
               {aiDraft.gaps?.length > 0 && (
-                <div className="p-2 rounded-md bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300">
+                <div className="p-2 cm-banner cm-banner-amber text-xs block">
                   <strong>Lücken die du noch ergänzen musst:</strong>
                   <ul className="list-disc list-inside mt-1">
                     {aiDraft.gaps.map((g, i) => <li key={i}>{g}</li>)}
@@ -593,13 +556,13 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
               <div className="flex gap-2">
                 <button
                   onClick={handleApplyDraft}
-                  className={`px-3 py-1.5 ${c.accentBg} ${c.accentHover} text-white text-sm rounded-lg flex items-center gap-2`}
+                  className={`px-3 py-1.5 ${s.accentBg} ${s.accentHover} text-white text-sm rounded-lg flex items-center gap-2`}
                 >
                   <Checkmark size={14} /> Übernehmen + öffnen
                 </button>
                 <button
                   onClick={() => { navigator.clipboard.writeText(aiDraft.draft); }}
-                  className={`px-3 py-1.5 ${c.bgTertiary} ${c.hover} ${c.text} text-sm rounded-lg`}
+                  className={`px-3 py-1.5 ${s.bgTertiary} ${s.hover} ${s.text} text-sm rounded-lg`}
                 >
                   In Zwischenablage
                 </button>
@@ -611,20 +574,20 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
 
       {/* Action Error Banner */}
       {actionError && (
-        <div className="mx-6 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center justify-between">
-          <span className="text-sm text-red-400">{actionError}</span>
-          <button onClick={() => setActionError(null)} className="text-red-400 hover:text-red-300 ml-3"><Close size={16} /></button>
+        <div className="mb-4 p-3 cm-banner cm-banner-red justify-between">
+          <span className="text-sm">{actionError}</span>
+          <button onClick={() => setActionError(null)} className="opacity-70 hover:opacity-100 ml-3"><Close size={16} /></button>
         </div>
       )}
 
       {/* List-Unsubscribe Banner */}
       {fullEmail?.listUnsubscribe && !unsubscribeResult && (
-        <div className="mx-6 mt-4 px-4 py-3 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-between gap-4 flex-wrap">
+        <div className="mb-4 px-4 py-3 cm-banner cm-banner-blue justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
-            <NotificationOff size={20} className="text-cyan-400 flex-shrink-0" />
+            <NotificationOff size={20} className="flex-shrink-0" />
             <div className="min-w-0">
-              <p className={`text-sm font-medium ${c.text}`}>Newsletter / Liste</p>
-              <p className={`text-xs ${c.textSecondary}`}>
+              <p className={`text-sm font-medium ${s.text}`}>Newsletter / Liste</p>
+              <p className={`text-xs ${s.textSecondary}`}>
                 Diese E-Mail enthält einen Abmeldungs-Hinweis ({fullEmail.listUnsubscribe.oneClick ? 'One-Click' : (fullEmail.listUnsubscribe.http ? 'Web' : 'E-Mail')}).
               </p>
             </div>
@@ -632,7 +595,7 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
           <button
             onClick={handleUnsubscribe}
             disabled={unsubscribing}
-            className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg text-sm transition-colors inline-flex items-center gap-2 flex-shrink-0"
+            className="px-4 py-1.5 bg-ms-blue hover:bg-ms-blue-dark disabled:opacity-50 text-white rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 flex-shrink-0"
           >
             {unsubscribing ? <><InProgress size={16} className="animate-spin" /> Melde ab…</> : <><NotificationOff size={16} /> Abmelden</>}
           </button>
@@ -641,60 +604,60 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
 
       {/* Unsubscribe Result */}
       {unsubscribeResult && (
-        <div className={`mx-6 mt-4 px-4 py-3 rounded-lg flex items-center justify-between gap-4 ${
+        <div className={`mb-4 px-4 py-3 rounded-lg flex items-center justify-between gap-4 ${
           unsubscribeResult.success
-            ? 'bg-green-500/10 border border-green-500/30'
-            : 'bg-red-500/10 border border-red-500/30'
+            ? 'cm-banner cm-banner-green'
+            : 'cm-banner cm-banner-red'
         }`}>
           <div className="flex items-center gap-3 min-w-0">
             {unsubscribeResult.success
-              ? <Checkmark size={20} className="text-green-400 flex-shrink-0" />
-              : <WarningAlt size={20} className="text-red-400 flex-shrink-0" />}
-            <span className={`text-sm ${unsubscribeResult.success ? 'text-green-400' : 'text-red-400'}`}>
+              ? <Checkmark size={20} className="flex-shrink-0" />
+              : <WarningAlt size={20} className="flex-shrink-0" />}
+            <span className="text-sm">
               {unsubscribeResult.success ? unsubscribeResult.message : (unsubscribeResult.error || 'Abmeldung fehlgeschlagen')}
             </span>
           </div>
-          <button onClick={() => setUnsubscribeResult(null)} className="text-gray-400 hover:text-white ml-2"><Close size={16} /></button>
+          <button onClick={() => setUnsubscribeResult(null)} className="opacity-70 hover:opacity-100 ml-2"><Close size={16} /></button>
         </div>
       )}
 
-      {/* E-Mail Meta */}
-      <div className={`px-6 py-4 ${c.border} border-b ${c.bgSecondary}`}>
-        <div className="flex items-start gap-4">
-          <div className={`w-12 h-12 ${c.accentBg} rounded-full flex items-center justify-center flex-shrink-0`}>
-            <span className="text-white font-semibold text-lg">
-              {fullEmail.from.charAt(0).toUpperCase()}
-            </span>
+      {/* Kopf der Mail: Betreff · Absender · Empfänger · Datum */}
+      <h1 className={`text-2xl font-semibold ${s.text} leading-snug break-words mb-4`}>
+        {fullEmail.subject || '(Kein Betreff)'}
+      </h1>
+      <div className={`flex items-start gap-3 pb-5 border-b ${s.border}`}>
+        {(() => {
+          const raw = String(fullEmail.from || '').trim();
+          const m = raw.match(/^"?([^"<]*)"?\s*<([^>]+)>/);
+          const name = (m ? (m[1] || '').trim() : raw.replace(/^["']+|["']+$/g, '')) || (m ? m[2] : raw);
+          const addr = m ? m[2].trim() : '';
+          return (
+            <>
+              <div className={`w-11 h-11 ${s.accentBg} rounded-full flex items-center justify-center flex-shrink-0`}>
+                <span className="text-white font-semibold text-base">{(name || '?').charAt(0).toUpperCase()}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline justify-between gap-x-3 flex-wrap">
+                  <span className={`text-[15px] font-semibold ${s.text} truncate min-w-[10rem]`}>{name}</span>
+                  <span className={`text-xs ${s.textSecondary} flex-shrink-0`}>{formatDate(fullEmail.date)}</span>
+                </div>
+                {addr && addr !== name && <div className={`text-xs ${s.textSecondary} truncate`}>{addr}</div>}
+          <div className={`text-xs ${s.textSecondary} mt-0.5 break-words`}>
+            <span className="font-medium">An: </span>{fullEmail.to}
+            {fullEmail.cc && <><span className="font-medium"> · Cc: </span>{fullEmail.cc}</>}
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`font-medium ${c.text}`}>{fullEmail.from}</span>
-              {!isRead && (
-                <span className={`px-2 py-0.5 ${c.accentBg} text-white text-xs rounded-full`}>
-                  Ungelesen
-                </span>
-              )}
-            </div>
-            <div className={`text-sm ${c.textSecondary}`}>
-              <span>An: {fullEmail.to}</span>
-              {fullEmail.cc && <span> • CC: {fullEmail.cc}</span>}
-            </div>
-            <div className={`text-xs ${c.textSecondary} mt-1`}>
-              {formatDate(fullEmail.date)}
-            </div>
-          </div>
-        </div>
+          {!isRead && (
+            <span className="cm-badge cm-badge-blue mt-1.5"><span>Ungelesen</span></span>
+          )}
+              </div>
+            </>
+          );
+        })()}
       </div>
 
-
-
       {/* E-Mail Inhalt */}
-      <div className={`flex-1 overflow-y-auto p-6 ${c.bg}`}>
-        <div className="max-w-4xl mx-auto">
-          {/* v6.14.0: Anhänge ÜBER dem Mailtext in einem markanten Banner —
-              vorher unter der Mail und darum leicht zu übersehen */}
-          {/* v7.2.0: Einladung zuoberst — die Termindaten steckten vorher
-              unlesbar im namenlosen .ics-Anhang. */}
+      <div className="pt-5">
+          {/* v7.2.0: Einladung zuoberst */}
           {fullEmail.invitation && (
             <InvitationCard
               invitation={fullEmail.invitation}
@@ -706,93 +669,94 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
             />
           )}
 
+          {/* v6.14.0: Anhänge über dem Mailtext — gut sichtbar, aber ruhig */}
           {visibleAttachments.length > 0 && (
-            <div className="mb-5 p-4 rounded-xl border border-amber-500/50 bg-amber-500/10">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-amber-400 flex items-center gap-2">
-                  <Attachment size={18} />
+            <div className="mb-5 rounded-lg border border-[#f2dd86] bg-[#fff8df] p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-[#7a5a00] flex items-center gap-2">
+                  <Attachment size={16} />
                   {visibleAttachments.length === 1 ? '1 Anhang' : `${visibleAttachments.length} Anhänge`}
                 </h3>
                 <button
                   onClick={downloadAllAttachments}
                   disabled={downloadingAll}
-                  className={`px-3 py-1 ${c.accentBg} ${c.accentHover} text-white text-sm rounded transition-colors disabled:opacity-50 flex items-center gap-2`}
+                  className={`px-3 py-1 ${s.accentBg} ${s.accentHover} text-white text-sm rounded-md font-medium transition-colors disabled:opacity-50 flex items-center gap-2`}
                 >
                   {downloadingAll
-                    ? <><InProgress size={16} className="animate-spin" /> Lade...</>
+                    ? <><InProgress size={16} className="animate-spin" /> Lade…</>
                     : <><Download size={16} /> Alle herunterladen</>}
                 </button>
               </div>
-              
-              <div className="grid gap-3">
+
+              <div className="grid gap-2">
                 {visibleAttachments.map((att) => {
                   const index = att.index;
                   return (
                   <div
                     key={`${fullEmail.uid}-${att.filename}-${index}`}
-                    className={`${c.bgSecondary} rounded-lg ${c.border} border overflow-hidden`}
+                    className={`bg-white rounded-md border ${s.border} overflow-hidden`}
                   >
                     {att.contentType?.startsWith('image/') && (
-                      <div 
-                        className="w-full h-32 bg-gray-900 flex items-center justify-center cursor-pointer"
+                      <div
+                        className={`w-full h-32 ${s.bgTertiary} flex items-center justify-center cursor-pointer`}
                         onClick={() => setPreviewAttachment(att)}
                       >
-                        <img 
+                        <img
                           src={`data:${att.contentType};base64,${att.content}`}
                           alt={att.filename}
                           className="max-h-full max-w-full object-contain"
                         />
                       </div>
                     )}
-                    
+
                     {att.contentType === 'application/pdf' && (
-                      <div 
-                        className="w-full h-32 bg-red-900/20 flex items-center justify-center cursor-pointer"
+                      <div
+                        className={`w-full h-24 ${s.bgTertiary} flex items-center justify-center cursor-pointer`}
                         onClick={() => setPreviewAttachment(att)}
                       >
                         <div className="text-center">
-                          <DocumentPdf size={32} className={`mx-auto mb-2 ${c.textSecondary}`} />
-                          <span className={`text-xs ${c.textSecondary}`}>Klicken für Vorschau</span>
+                          <DocumentPdf size={28} className={`mx-auto mb-1 ${s.textSecondary}`} />
+                          <span className={`text-xs ${s.textSecondary}`}>Klicken für Vorschau</span>
                         </div>
                       </div>
                     )}
-                    
-                    <div className="flex items-center justify-between p-3">
+
+                    <div className="flex items-center justify-between px-3 py-2">
                       <div className="flex items-center gap-3 min-w-0">
-                        {(() => { const FileIcon = getFileIcon(att.contentType, att.filename); return <FileIcon size={24} className={`flex-shrink-0 ${c.textSecondary}`} />; })()}
+                        {(() => { const FileIcon = getFileIcon(att.contentType, att.filename); return <FileIcon size={20} className={`flex-shrink-0 ${s.textSecondary}`} />; })()}
                         <div className="min-w-0">
-                          <p className={`text-sm ${c.text} truncate`}>{att.filename}</p>
-                          <p className={`text-xs ${c.textSecondary}`}>
+                          <p className={`text-sm ${s.text} truncate`}>{att.filename}</p>
+                          <p className={`text-xs ${s.textSecondary}`}>
                             {formatFileSize(att.size)} • {att.contentType?.split('/')[1]?.toUpperCase() || 'Datei'}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
                         {downloadProgress[index] === 'done' ? (
-                          <span className="text-green-400 text-sm flex items-center gap-1"><Checkmark size={16} /> Geladen</span>
+                          <span className="text-green-600 text-sm flex items-center gap-1"><Checkmark size={16} /> Geladen</span>
                         ) : downloadProgress[index] === 'downloading' ? (
-                          <InProgress size={16} className="text-cyan-400 animate-spin" />
+                          <InProgress size={16} className={`${s.accent} animate-spin`} />
                         ) : downloadProgress[index] === 'error' ? (
-                          <span className="text-red-400 text-sm flex items-center gap-1"><Close size={16} /> Fehler</span>
+                          <span className="text-ms-red text-sm flex items-center gap-1"><Close size={16} /> Fehler</span>
                         ) : (
                           <>
                             {isPreviewable(att.contentType) && (
                               <button
                                 onClick={() => setPreviewAttachment(att)}
-                                className={`px-3 py-1 ${c.bgTertiary} ${c.hover} ${c.textSecondary} rounded text-sm transition-colors inline-flex items-center gap-1`}
+                                className={`px-2.5 py-1 border ${s.border} ${s.hover} ${s.text} rounded-md text-sm transition-colors inline-flex items-center gap-1`}
                               >
                                 <View size={16} /> Vorschau
                               </button>
                             )}
                             <button
                               onClick={() => downloadAttachment(att, index, false)}
-                              className={`px-3 py-1 ${c.bgTertiary} ${c.hover} ${c.accent} rounded text-sm transition-colors flex items-center gap-1`}
+                              className={`px-2.5 py-1 border ${s.border} ${s.hover} ${s.accent} rounded-md text-sm transition-colors flex items-center gap-1`}
                             >
                               <Download size={16} /> Speichern
                             </button>
                             <button
                               onClick={() => downloadAttachment(att, index, true)}
-                              className={`px-3 py-1 ${c.bgTertiary} ${c.hover} text-green-400 rounded text-sm transition-colors flex items-center gap-1`}
+                              className={`px-2.5 py-1 border ${s.border} ${s.hover} ${s.text} rounded-md text-sm transition-colors flex items-center gap-1`}
                             >
                               <FolderOpen size={16} /> Öffnen
                             </button>
@@ -810,21 +774,24 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
           {fullEmail.html ? (
             <EmailHtmlFrame html={fullEmail.html} />
           ) : (
-            <pre className={`whitespace-pre-wrap font-mono text-sm ${c.text} ${c.bgSecondary} p-6 rounded-lg`}>
+            <div className={`whitespace-pre-wrap text-sm leading-relaxed ${s.text}`}>
               {fullEmail.text}
-            </pre>
+            </div>
           )}
-        </div>
       </div>
+            </div>
+          </div>
+        </div>
+      </SheetTheme>
 
       {/* v6.8.1: Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <EscapeCloser onEscape={() => setShowDeleteConfirm(false)} />
-          <div className={`${c.card} border ${c.border} rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl`}>
+          <div className={`${c.popover} border ${c.border} rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl`}>
             <div className="flex items-center gap-3 mb-4">
-              <div className="p-3 bg-red-500/20 rounded-full">
-                <TrashCan size={24} className="text-red-400" />
+              <div className="p-3 rounded-full" style={{ background: 'var(--cm-badge-red-bg)' }}>
+                <TrashCan size={24} className="text-ms-red" />
               </div>
               <div className="min-w-0">
                 <h3 className={`text-lg font-semibold ${c.text}`}>E-Mail löschen?</h3>
@@ -863,7 +830,7 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
         >
           <EscapeCloser onEscape={() => setPreviewAttachment(null)} />
           <div 
-            className={`max-w-4xl max-h-full ${c.card} rounded-xl overflow-hidden`}
+            className={`max-w-4xl max-h-full ${c.popover} border ${c.border} rounded-xl overflow-hidden`}
             onClick={e => e.stopPropagation()}
           >
             <div className={`flex items-center justify-between p-4 ${c.border} border-b`}>
@@ -871,7 +838,7 @@ const EmailView = ({ email, onBack, onReply, onReplyAll, onForward, currentFolde
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => downloadAttachment(previewAttachment, fullEmail?.attachments?.indexOf(previewAttachment) ?? -1)}
-                  className={`px-3 py-1 ${c.accentBg} ${c.accentHover} text-white rounded text-sm transition-colors flex items-center gap-1`}
+                  className={`px-3 py-1 ${c.accentBg} ${c.accentHover} text-white rounded-md text-sm transition-colors flex items-center gap-1`}
                 >
                   <Download size={16} /> Download
                 </button>

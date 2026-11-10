@@ -232,10 +232,10 @@ function ProfileTransfer() {
               autoComplete="off"
               spellCheck={false}
               disabled={importExpired || importing}
-              className={`w-full px-3 py-2 rounded-lg ${c.input} font-mono tracking-wider uppercase focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50`}
+              className={`w-full px-3 py-2 rounded-lg ${c.input} font-mono tracking-wider uppercase focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50`}
             />
             <label className={`flex items-center gap-2 text-sm ${c.textSecondary} cursor-pointer`}>
-              <input type="checkbox" checked={deleteFile} onChange={e => setDeleteFile(e.target.checked)} className="accent-cyan-500" />
+              <input type="checkbox" checked={deleteFile} onChange={e => setDeleteFile(e.target.checked)} className="accent-accentbg" />
               Profildatei nach erfolgreichem Import löschen
             </label>
             <div className="flex items-center gap-2">
